@@ -23,10 +23,14 @@ export async function GET(request) {
       const rawContent = fs.readFileSync(path.join(dir, file), 'utf-8');
       const { data, content } = matter(rawContent);
 
+      // 从文件名中提取前缀的日期部分
+      const match = slug.match(/^(\d{4}-\d{1,2}-\d{1,2})-/);
+      const dateFromFilename = match ? match[1] : '';
+
       return {
         slug,
         title: data.title || slug,
-        date: data.date?.split('T')[0] || '',
+        date: dateFromFilename,
         excerpt: data.excerpt || content.slice(0, 100),
         keywords: Array.isArray(data.keywords) ? data.keywords : [],
       };
