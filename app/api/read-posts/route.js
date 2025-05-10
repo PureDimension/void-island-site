@@ -32,7 +32,7 @@ export async function GET(request) {
         title: data.title || slug,
         date: dateFromFilename,
         excerpt: data.excerpt || content.slice(0, 100),
-        keywords: Array.isArray(data.keywords) ? data.keywords : [],
+        tags: Array.isArray(data.tags) ? data.tags : [],
       };
     });
 

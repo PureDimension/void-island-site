@@ -1,7 +1,16 @@
-这里是涟漪Rippin的个人网站！这里展示一些效果图
+这里是涟漪Rippin的个人网站！这里是需求文档
 
-![alt text](asset/menu.png)
-
-![alt text](asset/section.png)
-
-![alt text](asset/blog.png)
+- [ ] 设置section主页配色风格，使之符合section主题
+- [ ] 调整blog主页UI
+- [ ] 调整section页面返回按钮
+- [ ] 将blog调整为时间倒序
+- [ ] 添加blog置顶功能
+- [ ] 添加多重tag检索功能
+- [ ] 添加特定tag的其他排序功能（倒序、正序排序，部分设定集需要逻辑排序）
+- [ ] 进行移动端窄屏适配
+- [ ] 主菜单左侧栏放置个人介绍
+- [ ] 设置section鼠标悬浮动画
+- [ ] 修复主菜单重进时强制淡入淡出的问题
+- [ ] 修复blog前有markdown语法且无题头时，简略栏出现原始markdown串的问题
+- [ ] 允许blog简略栏出现图片
+- [ ] 设置blog弹窗时背景透明

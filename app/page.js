@@ -119,7 +119,20 @@ export default function Home() {
       }}
         className="headline-box"
       >
-        {sectionsConfig.headline.title}
+        <div style={{ textAlign: 'center', marginBottom: '20px' }}>
+          {/* GitHub 图标 */}
+          <div style={{ display: 'flex', justifyContent: 'center', marginBottom: '10px' }}>
+            <a href={sectionsConfig.headline.github} target="_blank" rel="noopener noreferrer">
+              <img
+                src="/github.svg" // 替换为实际的 GitHub 图标路径
+                alt="GitHub"
+                style={{ width: '32px', height: '32px' }}
+              />
+            </a>
+          </div>
+          {/* 原有 headline 内容 */}
+          <h1 style={{ whiteSpace: 'pre-line' }}>{sectionsConfig.headline.title}</h1>
+        </div>
       </div>
 
     </main>

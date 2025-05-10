@@ -8,7 +8,7 @@ import BlogModal from '../../components/BlogModal'; // 注意路径是否正确
 
 export default function MainSectionPage({ section_name }) {
   const [posts, setPosts] = useState([]);
-  const [selectedKeyword, setSelectedKeyword] = useState(null);
+  const [selectedTag, setSelectedTag] = useState(null);
   const [description, setDescription] = useState('');
   const [titleOff, setTitleOff] = useState('');
   const [modalSlug, setModalSlug] = useState(null);
@@ -39,10 +39,10 @@ export default function MainSectionPage({ section_name }) {
     fetchPosts();
   }, [section_name]);
 
-  const allKeywords = [...new Set(posts.flatMap(post => post.keywords))];
+  const allTags = [...new Set(posts.flatMap(post => post.tags))];
 
-  const filteredPosts = selectedKeyword
-    ? posts.filter(post => post.keywords.includes(selectedKeyword))
+  const filteredPosts = selectedTag
+    ? posts.filter(post => post.tags.includes(selectedTag))
     : posts;
   return (
     <main className="p-6 relative min-h-screen bg-black text-white">
@@ -65,11 +65,11 @@ export default function MainSectionPage({ section_name }) {
       <div className="border-4 border-white p-4 mb-6 rounded max-w-lg mx-auto">
         <h2 className="text-xl font-bold mb-2">关键词索引</h2>
         <div className="flex flex-wrap gap-2">
-          {allKeywords.map((kw) => (
+          {allTags.map((kw) => (
             <button
               key={kw}
-              onClick={() => setSelectedKeyword(kw === selectedKeyword ? null : kw)}
-              className={`px-3 py-1 rounded font-bold border ${kw === selectedKeyword ? 'bg-white text-black' : 'bg-gray-700 border-white text-white'}`}
+              onClick={() => setSelectedTag(kw === selectedTag ? null : kw)}
+              className={`px-3 py-1 rounded font-bold border ${kw === selectedTag ? 'bg-white text-black' : 'bg-gray-700 border-white text-white'}`}
             >
               {kw}
             </button>
@@ -86,10 +86,10 @@ export default function MainSectionPage({ section_name }) {
             <p className="text-base text-white line-clamp-3 mb-2">{post.excerpt}</p>
 
             <div className="flex flex-wrap gap-2 mb-2">
-              {post.keywords.map((kw, idx) => (
+              {post.tags.map((kw, idx) => (
                 <button
                   key={idx}
-                  onClick={() => setSelectedKeyword(kw === selectedKeyword ? null : kw)}
+                  onClick={() => setSelectedTag(kw === selectedTag ? null : kw)}
                   className="text-sm font-bold px-2 py-1 rounded bg-white text-black hover:bg-yellow-200 transition"
                 >
                   {kw}
