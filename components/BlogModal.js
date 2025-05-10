@@ -40,12 +40,14 @@ export default function BlogModal({ section, slug, onClose }) {
         </button>
 
         {/* Title and Excerpt */}
-        {title && excerpt && (
-          <div className="mb-6">
+        <div className="mb-6">
+          {title && (
             <h1 className="text-3xl font-bold text-center">{title}</h1>
+          )}
+          {excerpt && (
             <p className="text-xl italic text-center text-gray-600 mt-2">{excerpt}</p>
-          </div>
-        )}
+          )}
+        </div>
 
         {loading ? (
           <p className="text-center">加载中...</p>
