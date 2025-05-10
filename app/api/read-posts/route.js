@@ -25,7 +25,7 @@ export async function GET(request) {
 
       return {
         slug,
-        section: data.section || slug,
+        title: data.title || slug,
         date: data.date?.split('T')[0] || '',
         excerpt: data.excerpt || content.slice(0, 100),
         keywords: Array.isArray(data.keywords) ? data.keywords : [],
