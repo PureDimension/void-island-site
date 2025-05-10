@@ -1,23 +1,27 @@
 'use client';
 import { useEffect, useState } from 'react';
 import { useFilter } from './FilterContext';
-import titlesConfig from '../data/titles_config.json';
-
+import TopRightButton from './TopRightButton';
+import Link from 'next/link';  // 引入Link组件
+import sectionsConfig from '../config/sections_config.json';
+import MusicPlayer from '../components/MusicPlayer';
 export default function Home() {
   const { filterOn } = useFilter();
 
   const [animatedTitles, setAnimatedTitles] = useState(
-    titlesConfig.mainSections.map((item) => ({
+    sectionsConfig.mainSections.map((item) => ({
       text: filterOn ? item.titleOn : item.titleOff,
       color: item.color,
       visible: true,
+      link: '/blog/'+item.title, // 添加链接属性
     }))
   );
 
   useEffect(() => {
-    const newTitles = titlesConfig.mainSections.map((item) => ({
+    const newTitles = sectionsConfig.mainSections.map((item) => ({
       text: filterOn ? item.titleOn : item.titleOff,
       color: item.color,
+      link: '/blog/'+item.title, // 添加链接属性
     }));
 
     setAnimatedTitles((prev) =>
@@ -42,6 +46,7 @@ export default function Home() {
         paddingTop: '100px',
       }}
     >
+        <TopRightButton />
       {/* 主条目 */}
       <div
         style={{
@@ -67,7 +72,10 @@ export default function Home() {
                 : 'opacity 0.1s ease-in-out',
             }}
           >
+          {/* 在标题部分添加Link组件 */}
+          <Link href={ item.link}>
             {item.text}
+          </Link>
           </div>
         ))}
       </div>
@@ -85,7 +93,7 @@ export default function Home() {
           maxWidth: '600px',
         }}
       >
-        {titlesConfig.subProjects.map((project, idx) => (
+        {sectionsConfig.subProjects.map((project, idx) => (
           <div key={idx} style={{ color: project.color }}>
             - {project.title}：{project.description} -
           </div>
@@ -111,7 +119,7 @@ export default function Home() {
       }}
         className="headline-box"
       >
-        {titlesConfig.headline.title}
+        {sectionsConfig.headline.title}
       </div>
 
     </main>
