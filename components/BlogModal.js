@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import ReactMarkdown from 'react-markdown';
+import rehypeRaw from 'rehype-raw'; // 引入 rehype-raw 插件
 
 export default function BlogModal({ section, slug, onClose }) {
   const [markdown, setMarkdown] = useState('');
@@ -53,6 +54,7 @@ export default function BlogModal({ section, slug, onClose }) {
           <p className="text-center">加载中...</p>
         ) : (
           <ReactMarkdown
+            rehypePlugins={[rehypeRaw]} // 启用 rehype-raw 插件
             components={{
               h1: ({ children }) => <h1 className="text-2xl font-bold mb-4">{children}</h1>,
               h2: ({ children }) => <h2 className="text-xl font-semibold mb-3">{children}</h2>,
@@ -77,6 +79,10 @@ export default function BlogModal({ section, slug, onClose }) {
                 <a href={href} target="_blank" rel="noopener noreferrer" className="text-blue-600 underline">
                   {children}
                 </a>
+              ),
+              // 自定义渲染 <font> 标签
+              font: ({ color, children }) => (
+                <span style={{ color }}>{children}</span>
               ),
             }}
           >
