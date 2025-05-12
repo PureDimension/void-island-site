@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useState, useEffect } from "react";
 import sectionsConfig from "../../config/sections_config.json";
-import BlogModal from "../../components/BlogModal"; // 注意路径是否正确
+import BlogModal from "../components/BlogModal"; // 注意路径是否正确
 import KeywordIndex from "./components/KeywordIndex";
 import BlogPostList from "./components/BlogPostList";
 import SectionDescription from "./components/SectionDescription";
