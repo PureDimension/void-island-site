@@ -17,6 +17,10 @@ export default function Home() {
     }))
   );
 
+  const isMobile = typeof window !== 'undefined' && window.innerWidth <= 768; // 判断是否为手机屏幕
+  const playerHeight = isMobile ? 80 : 0; // 手机端预留 100px 高度，桌面端不预留
+
+
   useEffect(() => {
     const newTitles = sectionsConfig.mainSections.map((item) => ({
       text: filterOn ? item.titleOn : item.titleOff,
@@ -44,6 +48,7 @@ export default function Home() {
         flexDirection: 'column',
         alignItems: 'center',
         paddingTop: '100px',
+        paddingBottom: `${playerHeight}px`,
       }}
     >
         <TopRightButton />

@@ -12,7 +12,8 @@ export default function MainSectionPage({ section_name }) {
   const [description, setDescription] = useState('');
   const [titleOff, setTitleOff] = useState('');
   const [modalSlug, setModalSlug] = useState(null);
-
+  const [isMobile, setIsMobile] = useState(false); // 检测是否为手机端
+  const playerHeight = isMobile ? 80 : 0; // 手机端预留 100px 高度，桌面端不预留
 
   // 默认描述
   const defaultDescription = `这是一个默认描述，如果你看到这个说明标题配置加载失败。`;
@@ -39,13 +40,27 @@ export default function MainSectionPage({ section_name }) {
     fetchPosts();
   }, [section_name]);
 
+  // 检测是否为手机端
+  useEffect(() => {
+    function handleResize() {
+      setIsMobile(window.innerWidth <= 768); // 判断屏幕宽度是否小于等于768px
+    }
+    handleResize(); // 初始化时调用一次
+    window.addEventListener('resize', handleResize); // 监听窗口大小变化
+    return () => window.removeEventListener('resize', handleResize); // 清理事件监听器
+  }, []);
+
   const allTags = [...new Set(posts.flatMap(post => post.tags))];
 
   const filteredPosts = selectedTag
     ? posts.filter(post => post.tags.includes(selectedTag))
     : posts;
   return (
-    <main className="p-6 relative min-h-screen bg-black text-white">
+    <main className="p-6 relative min-h-screen bg-black text-white"
+      style={{
+        paddingBottom: `${playerHeight}px`, // 为内容预留底部空间
+      }}
+    >
       {/* 弹窗展示 markdown 内容 */}
       {modalSlug && (
         <BlogModal
@@ -55,11 +70,15 @@ export default function MainSectionPage({ section_name }) {
         />
       )}
       {/* 返回按钮 */}
-      <div className="absolute top-4 right-4 z-10">
+      <div
+        className="fixed top-4 right-4 z-10" // 使用 fixed 让按钮悬浮在右上角
+      >
         <Link href="/">
-          <button className="bg-white text-black px-3 py-1 font-bold rounded shadow-lg">返回</button>
+          <button className="bg-white text-black px-3 py-1 font-bold rounded shadow-lg">
+            返回
+          </button>
         </Link>
-      </div>
+</div>
 
       {/* 索引栏 */}
       <div className="border-4 border-white p-4 mb-6 rounded max-w-lg mx-auto">
@@ -76,6 +95,14 @@ export default function MainSectionPage({ section_name }) {
           ))}
         </div>
       </div>
+
+      {/* 栏目介绍（在手机端放在索引栏和博客条目之间） */}
+      {isMobile && (
+        <div className="bg-gray-700 text-white border-4 border-white p-6 mb-6 max-w-lg mx-auto rounded shadow-lg">
+          <h4 className="text-lg font-bold mb-2">{titleOff}</h4> {/* 使用titleOff作为栏目介绍标题 */}
+          <p className="text-sm whitespace-pre-line">{description}</p>
+        </div>
+      )}
 
       {/* 博客条目 */}
       <div className="flex flex-col gap-6 max-w-3xl mx-auto">
@@ -111,11 +138,13 @@ export default function MainSectionPage({ section_name }) {
       </div>
 
 
-      {/* 右下角栏目介绍 */}
-      <div className="fixed bottom-4 right-6 bg-gray-700 text-white border-4 border-white p-6 max-w-xs rounded shadow-lg">
-        <h4 className="text-lg font-bold mb-2">{titleOff}</h4> {/* 使用titleOff作为栏目介绍标题 */}
-        <p className="text-sm whitespace-pre-line">{description}</p>
-      </div>
+      {/* 右下角栏目介绍（仅在桌面端显示） */}
+      {!isMobile && (
+        <div className="fixed bottom-4 right-6 bg-gray-700 text-white border-4 border-white p-6 max-w-xs rounded shadow-lg">
+          <h4 className="text-lg font-bold mb-2">{titleOff}</h4> {/* 使用titleOff作为栏目介绍标题 */}
+          <p className="text-sm whitespace-pre-line">{description}</p>
+        </div>
+      )}
     </main>
   );
 }
