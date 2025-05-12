@@ -54,7 +54,7 @@ export default function BlogModal({ section, slug, onClose }) {
           <p className="text-center">加载中...</p>
         ) : (
           <ReactMarkdown
-            rehypePlugins={[rehypeRaw]} // 启用 rehype-raw 插件
+            rehypePlugins={[rehypeRaw]}
             components={{
               h1: ({ children }) => <h1 className="text-2xl font-bold mb-4">{children}</h1>,
               h2: ({ children }) => <h2 className="text-xl font-semibold mb-3">{children}</h2>,
@@ -62,9 +62,17 @@ export default function BlogModal({ section, slug, onClose }) {
               ul: ({ children }) => <ul className="list-disc ml-5 mb-3">{children}</ul>,
               ol: ({ children }) => <ol className="list-decimal ml-5 mb-3">{children}</ol>,
               li: ({ children }) => <li className="mb-1">{children}</li>,
-              code: ({ children }) => (
-                <code className="bg-gray-200 px-1 py-0.5 rounded text-sm font-mono">{children}</code>
-              ),
+              code: ({ children, className }) => {
+                // 如果是代码块里的 code，交给 pre 渲染，这里只处理行内 code
+                const isInline = !className;
+                return isInline ? (
+                  <code className="bg-gray-100 text-black px-1 py-0.5 rounded text-sm font-mono">
+                    {children}
+                  </code>
+                ) : (
+                  <code className={className}>{children}</code>
+                );
+              },
               pre: ({ children }) => (
                 <pre className="bg-gray-900 text-white p-4 rounded overflow-x-auto mb-4">
                   {children}
@@ -80,7 +88,6 @@ export default function BlogModal({ section, slug, onClose }) {
                   {children}
                 </a>
               ),
-              // 自定义渲染 <font> 标签
               font: ({ color, children }) => (
                 <span style={{ color }}>{children}</span>
               ),
