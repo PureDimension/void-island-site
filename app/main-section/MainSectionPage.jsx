@@ -13,7 +13,7 @@ export default function MainSectionPage({ section_name }) {
   const [titleOff, setTitleOff] = useState('');
   const [modalSlug, setModalSlug] = useState(null);
   const [isMobile, setIsMobile] = useState(false); // 检测是否为手机端
-  const playerHeight = isMobile ? 80 : 0; // 手机端预留 100px 高度，桌面端不预留
+  const playerHeight = isMobile ? 100 : 0; // 手机端预留 100px 高度，桌面端不预留
 
   // 默认描述
   const defaultDescription = `这是一个默认描述，如果你看到这个说明标题配置加载失败。`;

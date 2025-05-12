@@ -148,7 +148,15 @@ export default function MusicPlayer() {
 	const nameTextRef = useRef(null);
 	const [shouldScroll, setShouldScroll] = useState(false);
 	const currentTrack = musicList[currentIndex];
-
+	const [isMobile, setIsMobile] = useState(false); // 检测是否为手机端
+	useEffect(() => {
+		function handleResize() {
+		  setIsMobile(window.innerWidth <= 768); // 判断屏幕宽度是否小于等于768px
+		}
+		handleResize(); // 初始化时调用一次
+		window.addEventListener("resize", handleResize); // 监听窗口大小变化
+		return () => window.removeEventListener("resize", handleResize); // 清理事件监听器
+	  }, []);
 	useLayoutEffect(() => {
 		if (nameBoxRef.current && nameTextRef.current && currentTrack) {
 			setShouldScroll(
@@ -248,7 +256,15 @@ export default function MusicPlayer() {
 	if (!currentTrack) return null;
 
 	return (
-		<div className="fixed bottom-4 left-4 bg-black text-white border-2 border-white rounded p-4 shadow-lg flex items-center gap-4 z-50 min-w-[320px] max-w-[480px]">
+		<div 
+			className="fixed bottom-4 left-4 bg-black text-white border-2 border-white rounded p-4 shadow-lg flex items-center gap-4 z-50 min-w-[320px] max-w-[480px]"
+			style={{
+				left: isMobile ? '50%' : '16px', // 手机端居中，桌面端靠左
+				transform: isMobile ? 'translateX(-50%)' : 'none', // 手机端居中对齐
+				minWidth: '320px',
+				maxWidth: '480px',
+			  }}
+		>
 			{currentTrack.icon && (
 				<img
 					src={currentTrack.icon}
@@ -331,20 +347,23 @@ export default function MusicPlayer() {
 					<path d="M20 18V6M4 6l8 6-8 6V6z" />
 				</svg>
 			</IconButton>
-			<div className="flex items-center gap-1 w-32">
-				<span className="text-xs w-8 text-right">
-					{formatTime(currentTime)}
-				</span>
-				<input
-					type="range"
-					min="0"
-					max={duration || 0}
-					value={currentTime}
-					onChange={handleProgressChange}
-					className="w-16 h-1 accent-pink-500 bg-gray-700 rounded-lg"
-				/>
-				<span className="text-xs w-8 text-left">{formatTime(duration)}</span>
-			</div>
+			{/* 进度条部分，仅在非手机端显示 */}
+			{!isMobile && (  
+				<div className="flex items-center gap-1 w-32">
+					<span className="text-xs w-8 text-right">
+						{formatTime(currentTime)}
+					</span>
+					<input
+						type="range"
+						min="0"
+						max={duration || 0}
+						value={currentTime}
+						onChange={handleProgressChange}
+						className="w-16 h-1 accent-pink-500 bg-gray-700 rounded-lg"
+					/>
+					<span className="text-xs w-8 text-left">{formatTime(duration)}</span>
+				</div>
+			)}
 			<IconButton onClick={togglePlayMode} title={playModes[playModeIdx].title}>
 				{playModes[playModeIdx].icon}
 			</IconButton>

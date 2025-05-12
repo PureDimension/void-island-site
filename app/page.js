@@ -7,6 +7,8 @@ import sectionsConfig from '../config/sections_config.json';
 import MusicPlayer from '../components/MusicPlayer';
 export default function Home() {
   const { filterOn } = useFilter();
+  const [isMobile, setIsMobile] = useState(false); // 检测是否为手机端
+  const playerHeight = isMobile ? 80 : 0; // 手机端预留 100px 高度，桌面端不预留
 
   const [animatedTitles, setAnimatedTitles] = useState(
     sectionsConfig.mainSections.map((item) => ({
@@ -17,9 +19,16 @@ export default function Home() {
     }))
   );
 
-  const isMobile = typeof window !== 'undefined' && window.innerWidth <= 768; // 判断是否为手机屏幕
-  const playerHeight = isMobile ? 80 : 0; // 手机端预留 100px 高度，桌面端不预留
 
+  // 检测是否为手机端
+  useEffect(() => {
+    function handleResize() {
+      setIsMobile(window.innerWidth <= 768); // 判断屏幕宽度是否小于等于768px
+    }
+    handleResize(); // 初始化时调用一次
+    window.addEventListener('resize', handleResize); // 监听窗口大小变化
+    return () => window.removeEventListener('resize', handleResize); // 清理事件监听器
+  }, []);
 
   useEffect(() => {
     const newTitles = sectionsConfig.mainSections.map((item) => ({
