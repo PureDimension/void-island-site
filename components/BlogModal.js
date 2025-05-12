@@ -58,6 +58,10 @@ export default function BlogModal({ section, slug, onClose }) {
             components={{
               h1: ({ children }) => <h1 className="text-2xl font-bold mb-4">{children}</h1>,
               h2: ({ children }) => <h2 className="text-xl font-semibold mb-3">{children}</h2>,
+              h3: ({ children }) => <h3 className="text-lg font-semibold mb-2">{children}</h3>,
+              h4: ({ children }) => <h4 className="text-base font-semibold mb-1.5">{children}</h4>,
+              h5: ({ children }) => <h5 className="text-sm font-semibold mb-1">{children}</h5>,
+              h6: ({ children }) => <h6 className="text-xs font-semibold mb-1 text-gray-600 uppercase tracking-wider">{children}</h6>,
               p: ({ children }) => <p className="mb-3 leading-relaxed">{children}</p>,
               ul: ({ children }) => <ul className="list-disc ml-5 mb-3">{children}</ul>,
               ol: ({ children }) => <ol className="list-decimal ml-5 mb-3">{children}</ol>,
