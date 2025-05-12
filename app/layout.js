@@ -2,7 +2,7 @@
 
 import { FilterProvider, useFilter } from './FilterContext';
 import './globals.css';
-import MusicPlayer from '../components/MusicPlayer'; // 新增引入
+import MusicPlayer from '../components/MusicPlayer.jsx';
 
 function LayoutContent({ children }) {
   const { filterOn } = useFilter();
