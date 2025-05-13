@@ -78,6 +78,7 @@ export default function MainSectionPage({ posts, section_name }) {
 					excerpt={modalPost.excerpt}
 					content={modalPost.content}
 					onClose={() => handleSetModalSlug(null)}
+					isMobile={isMobile} // 传递是否为手机端
 				/>
 			)}
 			<ReturnButton />
