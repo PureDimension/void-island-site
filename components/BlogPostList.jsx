@@ -24,18 +24,22 @@ export default function BlogPostList({
 						{post.excerpt}
 					</p>
 					<div className="flex flex-wrap gap-2 mb-2">
-						{post.tags.map((kw, idx) => (
-							<button
-								key={idx}
-								onClick={(e) => {
-									e.stopPropagation();
-									setSelectedTag(kw === selectedTag ? null : kw);
-								}}
-								className="text-sm font-bold px-2 py-1 rounded bg-white text-black hover:bg-yellow-200 transition"
-							>
-								{kw}
-							</button>
-						))}
+					{post.tags.map((kw, idx) => (
+						<button
+							key={idx}
+							onClick={(e) => {
+								e.stopPropagation();
+								setSelectedTag(kw === selectedTag ? null : kw);
+							}}
+							className={`text-sm font-bold px-2 py-1 rounded border ${
+								kw === selectedTag
+									? "bg-white text-black"
+									: "bg-gray-700 border-white text-white"
+							} hover:bg-gray-200 transition`}
+						>
+							{kw}
+						</button>
+					))}
 					</div>
 				</div>
 			))}

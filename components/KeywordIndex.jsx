@@ -11,7 +11,7 @@ export default function KeywordIndex({ allTags, selectedTag, setSelectedTag }) {
 							kw === selectedTag
 								? "bg-white text-black"
 								: "bg-gray-700 border-white text-white"
-						}`}
+						} hover:bg-gray-200 transition`}
 					>
 						{kw}
 					</button>
