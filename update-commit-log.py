@@ -8,6 +8,7 @@ commit_log_js_file = "commit-log.js"
 
 # 获取文件的元数据，使用 YAML 或 Markdown 文件头解析
 def get_metadata(file_path):
+    import pdb;pdb.set_trace()
     try:
         with open(file_path, "r", encoding="utf-8") as file:
             lines = file.readlines()
