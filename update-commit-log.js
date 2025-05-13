@@ -12,6 +12,11 @@ const cleanCommitLog = () => {
   const rawLog = fs.readFileSync(commitLogFile, "utf-8");
   const lines = rawLog.split("\n").filter(Boolean); // 清除空行
 
+  if (lines.length === 0) {
+    console.log("[DEBUG] commit-log.txt is empty or contains no valid entries");
+    return [];
+  }
+
   // 提取文件路径和时间戳
   const logWithTimestamps = lines.map((line) => {
     const filePath = line.trim();
@@ -41,6 +46,8 @@ const cleanCommitLog = () => {
   // 清空 commit-log.txt 并保存最新的记录
   const updatedLog = latestLogs.map((log) => log.filePath).join("\n");
   fs.writeFileSync(commitLogFile, updatedLog);
+  console.log("[DEBUG] commit-log.txt updated with the latest logs");
+
   return latestLogs;
 };
 
@@ -68,8 +75,14 @@ const getBlogMetadata = (logs) => {
 
 // 3. 将获取的元信息写入 commit-log.js
 const writeCommitLogJS = (blogMetadata) => {
+  if (blogMetadata.length === 0) {
+    console.error("[ERROR] No blog metadata to write to commit-log.js");
+    return;
+  }
+  
   const logContent = `export const logs = ${JSON.stringify(blogMetadata, null, 2)};`;
   fs.writeFileSync(commitLogJSFile, logContent);
+  console.log("[DEBUG] commit-log.js updated with the blog metadata");
 };
 
 // 主函数执行流程
@@ -81,6 +94,11 @@ const updateCommitLog = () => {
     const latestLogs = cleanCommitLog();
 
     // 获取这 5 条日志对应的博客元数据
+    if (latestLogs.length === 0) {
+      console.log("[DEBUG] No valid blog logs to process.");
+      return;
+    }
+    
     const blogMetadata = getBlogMetadata(latestLogs);
 
     // 将元数据写入 commit-log.js
