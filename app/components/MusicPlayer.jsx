@@ -136,7 +136,7 @@ const IconButton = ({ onClick, title, children, className }) => (
 	</button>
 );
 
-export default function MusicPlayer() {
+function MusicPlayer() {
 	const [musicList, setMusicList] = useState([]);
 	const [currentIndex, setCurrentIndex] = useState(0);
 	const [isPlaying, setIsPlaying] = useState(false);
@@ -378,3 +378,5 @@ export default function MusicPlayer() {
 		</div>
 	);
 }
+
+export default MusicPlayer;
