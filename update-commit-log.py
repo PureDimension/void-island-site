@@ -29,7 +29,6 @@ def get_metadata(file_path):
 
 # 清理并获取最新的 5 条记录
 def clean_commit_log():
-    import pdb;pdb.set_trace()
     try:
         with open(commit_log_file, "r", encoding="utf-8") as file:
             lines = file.readlines()
@@ -125,4 +124,5 @@ def update_commit_log():
 
 # 执行更新操作
 if __name__ == "__main__":
+    import pdb;pdb.set_trace()
     update_commit_log()
