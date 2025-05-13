@@ -1,62 +1,68 @@
 "use client";
-
 import Link from "next/link";
-import { useState, useEffect } from "react";
 import sectionsConfig from "../config/sections_config.json";
 import BlogModal from "./components/BlogModal";
 import KeywordIndex from "./components/KeywordIndex";
 import BlogPostList from "./components/BlogPostList";
 import SectionDescription from "./components/SectionDescription";
 import ReturnButton from "./components/ReturnButton";
+import { useState, useEffect } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 
-export default function MainSectionPage({ section_name }) {
-	const [posts, setPosts] = useState([]);
+export default function MainSectionPage({ posts, section_name }) {
+	const router = useRouter();
+	const searchParams = useSearchParams();
 	const [selectedTag, setSelectedTag] = useState(null);
 	const [description, setDescription] = useState("");
 	const [titleOff, setTitleOff] = useState("");
 	const [modalSlug, setModalSlug] = useState(null);
-	const [isMobile, setIsMobile] = useState(false); // 检测是否为手机端
-	const playerHeight = isMobile ? 100 : 0; // 手机端预留 100px 高度，桌面端不预留
+	const [isMobile, setIsMobile] = useState(false);
+	const playerHeight = isMobile ? 100 : 0;
 
-	// 默认描述
+	// 打开页面时根据url参数自动弹窗
+	useEffect(() => {
+		const urlSlug = searchParams.get("post");
+		if (urlSlug) setModalSlug(urlSlug);
+	}, [searchParams]);
+
+	// 打开弹窗时更新url，关闭时恢复
+	function handleSetModalSlug(slug) {
+		if (slug) {
+			router.replace(`?post=${encodeURIComponent(slug)}`, { scroll: false });
+			setModalSlug(slug);
+		} else {
+			router.replace(`/blog/${section_name}`, { scroll: false });
+			setModalSlug(null);
+		}
+	}
+
+	const modalPost = modalSlug ? posts.find((p) => p.slug === modalSlug) : null;
+
 	const defaultDescription = `这是一个默认描述，如果你看到这个说明标题配置加载失败。`;
 
-	// 加载标题配置
 	useEffect(() => {
-		// 查找匹配的栏目并设置描述
 		const section = sectionsConfig.mainSections.find(
 			(item) => item.title === section_name
 		);
 		if (section) {
 			setDescription(section.description);
-			setTitleOff(section.titleOff); // 获取titleOff值
+			setTitleOff(section.titleOff);
 		} else {
 			setDescription(defaultDescription);
-			setTitleOff(defaultDescription); // 如果加载失败，设置默认值
+			setTitleOff(defaultDescription);
 		}
 	}, [section_name]);
 
-	useEffect(() => {
-		async function fetchPosts() {
-			const res = await fetch(`/api/read-posts?section=${section_name}`);
-			const data = await res.json();
-			setPosts(data);
-		}
-		fetchPosts();
-	}, [section_name]);
-
-	// 检测是否为手机端
 	useEffect(() => {
 		function handleResize() {
-			setIsMobile(window.innerWidth <= 768); // 判断屏幕宽度是否小于等于768px
+			setIsMobile(window.innerWidth <= 768);
 		}
-		handleResize(); // 初始化时调用一次
-		window.addEventListener("resize", handleResize); // 监听窗口大小变化
-		return () => window.removeEventListener("resize", handleResize); // 清理事件监听器
+		handleResize();
+		window.addEventListener("resize", handleResize);
+		return () => window.removeEventListener("resize", handleResize);
 	}, []);
 
 	const allTags = [...new Set(posts.flatMap((post) => post.tags))];
-
 	const filteredPosts = selectedTag
 		? posts.filter((post) => post.tags.includes(selectedTag))
 		: posts;
@@ -64,30 +70,23 @@ export default function MainSectionPage({ section_name }) {
 	return (
 		<main
 			className="p-6 relative min-h-screen bg-black text-white"
-			style={{
-				paddingBottom: `${playerHeight}px`,
-			}}
+			style={{ paddingBottom: `${playerHeight}px` }}
 		>
-			{/* 弹窗展示 markdown 内容 */}
-			{modalSlug && (
+			{modalPost && (
 				<BlogModal
-					section={section_name}
-					slug={modalSlug}
-					onClose={() => setModalSlug(null)}
+					title={modalPost.title}
+					excerpt={modalPost.excerpt}
+					content={modalPost.content}
+					onClose={() => handleSetModalSlug(null)}
 					isMobile={isMobile} // 传递是否为手机端
 				/>
 			)}
-			{/* 返回按钮 */}
 			<ReturnButton />
-
-			{/* 索引栏 */}
 			<KeywordIndex
 				allTags={allTags}
 				selectedTag={selectedTag}
 				setSelectedTag={setSelectedTag}
 			/>
-
-			{/* 栏目介绍（在手机端放在索引栏和博客条目之间） */}
 			{isMobile && (
 				<SectionDescription
 					titleOff={titleOff}
@@ -95,16 +94,12 @@ export default function MainSectionPage({ section_name }) {
 					mobile={true}
 				/>
 			)}
-
-			{/* 博客条目 */}
 			<BlogPostList
 				posts={filteredPosts}
 				selectedTag={selectedTag}
 				setSelectedTag={setSelectedTag}
-				setModalSlug={setModalSlug}
+				setModalSlug={handleSetModalSlug}
 			/>
-
-			{/* 右下角栏目介绍（仅在桌面端显示） */}
 			{!isMobile && (
 				<SectionDescription
 					titleOff={titleOff}
