@@ -7,7 +7,7 @@ import Link from "next/link";
 import sectionsConfig from "@/config/sections_config.json";
 import BlogModal from "@/components/BlogModal";
 import SelfIntroduction from "@/components/SelfIntroduction";
-import getRecentBlogMetadata from "@/lib/getRecentBlogMetadata";
+import getRecentBlogMetadata from "@/lib/RecentBlogMetadata";
 
 export default function HomeContent({ selfIntroPosts }) {
 	const { filterOn } = useFilter();

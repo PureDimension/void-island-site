@@ -3,7 +3,7 @@ import path from "path";
 import matter from "gray-matter";
 import { recentBlogs } from "../commit-log"; // 根据实际路径调整
 
-function getRecentBlogMetadata() {
+export default function getRecentBlogMetadata() {
   return recentBlogs.map((relativePath) => {
     const fullPath = path.join(process.cwd(), relativePath);
     const fileContent = fs.readFileSync(fullPath, "utf-8");
