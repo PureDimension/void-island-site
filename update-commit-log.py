@@ -10,8 +10,13 @@ commit_log_js_file = "commit-log.js"
 def escape_file_paths(file_paths):
     escaped_paths = []
     for path in file_paths:
-        escaped_path = bytes(path, 'utf-8').decode('unicode_escape')
-        escaped_paths.append(escaped_path)
+        try:
+            # 使用 unicode_escape 转义路径
+            escaped_path = path.encode('utf-8').decode('unicode_escape')
+            escaped_paths.append(escaped_path)
+        except Exception as e:
+            print(f"[ERROR] Failed to escape file path: {path} - {e}")
+            escaped_paths.append(path)  # 如果转义失败，保留原路径
     return escaped_paths
 
 # 获取文件的元数据，使用 YAML 或 Markdown 文件头解析
@@ -46,7 +51,8 @@ def clean_commit_log():
 
         # 对路径进行转义
         lines = escape_file_paths(lines)
-        print(lines)
+        print(f"[DEBUG] Escaped paths: {lines}")
+
         # 根据文件的修改时间排序
         logs_with_timestamp = []
         for line in lines:
