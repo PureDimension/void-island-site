@@ -7,14 +7,12 @@ import Link from "next/link";
 import sectionsConfig from "@/config/sections_config.json";
 import BlogModal from "@/components/BlogModal";
 import SelfIntroduction from "@/components/SelfIntroduction";
-import getRecentBlogMetadata from "@/lib/RecentBlogMetadata";
 
-export default function HomeContent({ selfIntroPosts }) {
+export default function HomeContent({ selfIntroPosts, headlinePosts }) {
 	const { filterOn } = useFilter();
 	const [isMobile, setIsMobile] = useState(false);
 	const [modalSlug, setModalSlug] = useState(null);
 	const [modalOpen, setModalOpen] = useState(false);
-  const recentPosts = getRecentBlogMetadata();
 	const openModal = (slug) => {
 		setModalSlug(slug);
 		setModalOpen(true);
@@ -159,15 +157,30 @@ export default function HomeContent({ selfIntroPosts }) {
         className="headline-box"
       >
         <div style={{ textAlign: "center", marginBottom: "20px" }}>
+          <h1 style={{ whiteSpace: "pre-line" }}>
+            {sectionsConfig.headline.title}
+          </h1>
+        </div>
+        <div style={{ textAlign: "center", marginBottom: "20px" }}>
           <h1>实时更新</h1>
         </div>
-        {recentPosts.map((post, index) => (
+        {headlinePosts.map((post, index) => (
           <div key={index} style={{ marginBottom: "10px", textAlign: "left" }}>
-            <div><strong>{post.date}</strong></div>
-            <div>{post.section}：{post.title}</div>
+            <div style={{ fontSize: "0.85em", opacity: 0.85 }}>
+              {post.date}｜{post.section}
+            </div>
+            <div style={{ fontSize: "1em" }}>
+              <a
+                href={`/blog/${post.section}?post=${post.slug}`}
+                style={{ color: "#fff", textDecoration: "underline" }}
+              >
+                {post.title}
+              </a>
+            </div>
           </div>
         ))}
       </div>
+
     </main>
   );
 }
