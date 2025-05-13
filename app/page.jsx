@@ -81,6 +81,7 @@ export default function Home() {
           section="self-introduction" // 固定为 self-introduction
           slug={modalSlug} // 传递当前点击的 slug
           onClose={closeModal} // 关闭弹窗
+          isMobile={isMobile} // 传递是否为手机端
         />
       )}
       <TopRightButton

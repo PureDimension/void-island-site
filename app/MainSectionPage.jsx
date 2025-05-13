@@ -74,6 +74,7 @@ export default function MainSectionPage({ section_name }) {
 					section={section_name}
 					slug={modalSlug}
 					onClose={() => setModalSlug(null)}
+					isMobile={isMobile} // 传递是否为手机端
 				/>
 			)}
 			{/* 返回按钮 */}
