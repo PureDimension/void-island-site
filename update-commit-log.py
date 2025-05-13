@@ -89,7 +89,9 @@ def get_blog_metadata(latest_logs):
             })
     return blog_metadata
 
-def write_commit_log_js(blog_metadata):
+def write_commit_log_js(blog_metadata):# 先清空 commit-log.js
+    with open(commit_log_js_file, "w", encoding="utf-8") as file:
+        file.write("")  # 写入空内容
     try:
         if not blog_metadata:
             print("[ERROR] No metadata to write.")
