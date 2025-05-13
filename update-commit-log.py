@@ -70,7 +70,9 @@ def get_blog_metadata(latest_logs):
         metadata = get_metadata(decoded_path)
         if metadata:
             title = metadata.get("title", "No title")
-            date = metadata.get("date", "Unknown date")
+            # 使用文件的最新修改时间作为日期
+            timestamp = log['timestamp']
+            date = datetime.fromtimestamp(timestamp).strftime("%Y-%m-%d")
             slug = os.path.splitext(os.path.basename(decoded_path))[0]
 
             # 解析 section，例如 blog/tech/post.md → tech
@@ -83,11 +85,12 @@ def get_blog_metadata(latest_logs):
 
             blog_metadata.append({
                 "title": title,
-                "date": date,
+                "date": date,  # 使用修改时间的日期
                 "slug": slug,
                 "section": section
             })
     return blog_metadata
+
 
 def write_commit_log_js(blog_metadata):# 先清空 commit-log.js
     try:
