@@ -20,7 +20,7 @@ export default function SelfIntroduction({
         border: "3px solid white",
         fontWeight: "bold",
         maxWidth: "300px",
-        zIndex: 3,
+        zIndex: 25,
         wordWrap: "break-word",
         textAlign: "center",
         boxShadow: "0 4px 8px rgba(0,0,0,0.2)",

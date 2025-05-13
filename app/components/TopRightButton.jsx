@@ -32,6 +32,7 @@ export default function TopRightButton({ isMobile }) {
                 borderRadius: "10px",
                 top: `${buttonStyle.top}px`, // 动态顶部距离
                 right: `${buttonStyle.right}px`, // 动态右侧距离
+                zIndex: 20, // 确保通常来说显示在最顶层
                 display: "flex",
                 alignItems: "center",
             }}

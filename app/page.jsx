@@ -81,16 +81,10 @@ export default function Home() {
           section="self-introduction" // 固定为 self-introduction
           slug={modalSlug} // 传递当前点击的 slug
           onClose={closeModal} // 关闭弹窗
-          style={{
-            zIndex: 6, // 设置更高的 z-index，确保始终在最顶层
-          }}
         />
       )}
       <TopRightButton
          isMobile={isMobile}
-          style={{
-            zIndex: 5, // 设置更高的 z-index，确保始终在最顶层
-          }}
       />
 
       <SelfIntroduction
