@@ -1,5 +1,5 @@
 "use client";
-import { useFilter } from "./FilterContext";
+import { useFilter } from "@/components/FilterContext";
 import { useEffect, useState } from "react";
 
 export default function TopRightButton({ isMobile }) {

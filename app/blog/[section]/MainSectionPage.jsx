@@ -1,11 +1,11 @@
 "use client";
 import Link from "next/link";
-import sectionsConfig from "../config/sections_config.json";
-import BlogModal from "./components/BlogModal";
-import KeywordIndex from "./components/KeywordIndex";
-import BlogPostList from "./components/BlogPostList";
-import SectionDescription from "./components/SectionDescription";
-import ReturnButton from "./components/ReturnButton";
+import sectionsConfig from "@/config/sections_config.json";
+import BlogModal from "@/components/BlogModal";
+import KeywordIndex from "@/components/KeywordIndex";
+import BlogPostList from "@/components/BlogPostList";
+import SectionDescription from "@/components/SectionDescription";
+import ReturnButton from "@/components/ReturnButton";
 import { useState, useEffect } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 

@@ -1,8 +1,8 @@
 "use client";
 
-import { FilterProvider, useFilter } from "./components/FilterContext";
+import { FilterProvider, useFilter } from "@/components/FilterContext";
 import "./globals.css";
-import MusicPlayer from "./components/MusicPlayer";
+import MusicPlayer from "@/components/MusicPlayer";
 
 function LayoutContent({ children }) {
 	const { filterOn } = useFilter();

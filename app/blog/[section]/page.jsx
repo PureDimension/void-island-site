@@ -1,5 +1,5 @@
 import { getPostsBySection } from "@/lib/posts";
-import MainSectionPage from "@/app/MainSectionPage";
+import MainSectionPage from "./MainSectionPage";
 
 export default async function BlogPage({ params }) {
 	const { section } = params;

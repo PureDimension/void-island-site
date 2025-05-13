@@ -1,12 +1,12 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useFilter } from "./components/FilterContext";
-import TopRightButton from "./components/TopRightButton";
+import { useFilter } from "@/components/FilterContext";
+import TopRightButton from "@/components/TopRightButton";
 import Link from "next/link";
-import sectionsConfig from "../config/sections_config.json";
-import BlogModal from "./components/BlogModal";
-import SelfIntroduction from "./components/SelfIntroduction";
+import sectionsConfig from "@/config/sections_config.json";
+import BlogModal from "@/components/BlogModal";
+import SelfIntroduction from "@/components/SelfIntroduction";
 
 export default function HomeContent({ selfIntroPosts }) {
 	const { filterOn } = useFilter();
