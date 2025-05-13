@@ -19,7 +19,7 @@ export default function BlogPostList({
 					role="button"
 				>
 					<h3 className="text-2xl font-bold mb-1">{post.title}</h3>
-					<p className="text-sm text-gray-400 mb-2">{post.date}</p>
+					<p className="text-sm text-gray-400 mb-2">{new Date(post.date).toISOString().split("T")[0]}</p>
 					<p className="text-base text-white line-clamp-3 mb-2">
 						{post.excerpt}
 					</p>
