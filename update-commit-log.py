@@ -41,7 +41,7 @@ def get_metadata(file_path):
 def clean_commit_log():
     try:
         with open(commit_log_file, "r", encoding="utf-8", errors='ignore') as file:
-            raw_lines = [line.strip() for line in file if line.strip()]
+            raw_lines = list(set([line.strip() for line in file if line.strip()]))
 
         decoded_pairs = decode_and_map_paths(raw_lines)
         logs_with_time = []
@@ -90,8 +90,6 @@ def get_blog_metadata(latest_logs):
     return blog_metadata
 
 def write_commit_log_js(blog_metadata):# 先清空 commit-log.js
-    with open(commit_log_js_file, "w", encoding="utf-8") as file:
-        file.write("")  # 写入空内容
     try:
         if not blog_metadata:
             print("[ERROR] No metadata to write.")
@@ -126,6 +124,10 @@ def update_commit_log():
         write_commit_log_js(blog_metadata)
 
         print("[INFO] commit-log.js has been updated.")
+        with open(commit_log_file, "w", encoding="utf-8") as file:
+            for log in latest_logs:
+                file.write(f"{log['raw']}\n")
+        print("[INFO] commit-log.txt has been updated.")
     except Exception as e:
         print(f"[ERROR] Failed to update commit log: {e}")
 
