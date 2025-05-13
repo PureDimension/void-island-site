@@ -3,8 +3,9 @@ import path from "path";
 import matter from "gray-matter";
 import MainSectionPage from "@/app/MainSectionPage";
 
-export default function BlogPage({ params }) {
-	const section_name = params.section;
+export default async function BlogPage({ params }) {
+	const { section } = await params;
+	const section_name = section;
 	const sectionDir = path.join(process.cwd(), "blog", section_name);
 	let posts = [];
 	if (fs.existsSync(sectionDir)) {

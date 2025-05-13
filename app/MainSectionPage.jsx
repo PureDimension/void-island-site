@@ -7,14 +7,34 @@ import BlogPostList from "./components/BlogPostList";
 import SectionDescription from "./components/SectionDescription";
 import ReturnButton from "./components/ReturnButton";
 import { useState, useEffect } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 
 export default function MainSectionPage({ posts, section_name }) {
+	const router = useRouter();
+	const searchParams = useSearchParams();
 	const [selectedTag, setSelectedTag] = useState(null);
 	const [description, setDescription] = useState("");
 	const [titleOff, setTitleOff] = useState("");
 	const [modalSlug, setModalSlug] = useState(null);
 	const [isMobile, setIsMobile] = useState(false);
 	const playerHeight = isMobile ? 100 : 0;
+
+	// 打开页面时根据url参数自动弹窗
+	useEffect(() => {
+		const urlSlug = searchParams.get("post");
+		if (urlSlug) setModalSlug(urlSlug);
+	}, [searchParams]);
+
+	// 打开弹窗时更新url，关闭时恢复
+	function handleSetModalSlug(slug) {
+		if (slug) {
+			router.replace(`?post=${encodeURIComponent(slug)}`, { scroll: false });
+			setModalSlug(slug);
+		} else {
+			router.replace(`/blog/${section_name}`, { scroll: false });
+			setModalSlug(null);
+		}
+	}
 
 	const modalPost = modalSlug ? posts.find((p) => p.slug === modalSlug) : null;
 
@@ -57,7 +77,7 @@ export default function MainSectionPage({ posts, section_name }) {
 					title={modalPost.title}
 					excerpt={modalPost.excerpt}
 					content={modalPost.content}
-					onClose={() => setModalSlug(null)}
+					onClose={() => handleSetModalSlug(null)}
 				/>
 			)}
 			<ReturnButton />
@@ -77,7 +97,7 @@ export default function MainSectionPage({ posts, section_name }) {
 				posts={filteredPosts}
 				selectedTag={selectedTag}
 				setSelectedTag={setSelectedTag}
-				setModalSlug={setModalSlug}
+				setModalSlug={handleSetModalSlug}
 			/>
 			{!isMobile && (
 				<SectionDescription
