@@ -31,7 +31,7 @@ body {
   color: #fff;
 }
 
-@media (max-width: 600px) {
+@media (max-width: 768px) {
   .headline-box {
     position: static !important;
     margin: 20px auto;

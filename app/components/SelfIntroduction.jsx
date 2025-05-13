@@ -12,7 +12,7 @@ export default function SelfIntroduction({
         position: isMobile ? "static" : "fixed", // 手机端为静态布局，电脑端为固定布局
         top: isMobile ? "auto" : "20px",
         left: isMobile ? "auto" : "20px",
-        bottom: isMobile ? "20px" : `140px`, // 电脑端扩展到页面底部，预留播放器高度
+        bottom: isMobile ? "auto" : `140px`, // 电脑端扩展到页面底部，预留播放器高度
         backgroundColor: "rgba(100, 100, 100, 0.9)",
         color: "white",
         padding: "15px 20px",

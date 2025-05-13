@@ -95,6 +95,7 @@ export default function Home() {
 
       <div
         style={{
+          paddingTop: isMobile ? "15px" : "0px",  //手机端顶部留出阴影空隙
           display: "flex",
           flexDirection: "column",
           alignItems: "center",
