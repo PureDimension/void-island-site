@@ -72,7 +72,7 @@ def get_blog_metadata(latest_logs):
             title = metadata.get("title", "No title")
             # 使用文件的最新修改时间作为日期
             timestamp = log['timestamp']
-            date = datetime.fromtimestamp(timestamp).strftime("%Y-%m-%d")
+            date = datetime.fromtimestamp(timestamp).strftime("%Y-%m-%d %H:%M:%S")
             slug = os.path.splitext(os.path.basename(decoded_path))[0]
 
             # 解析 section，例如 blog/tech/post.md → tech
