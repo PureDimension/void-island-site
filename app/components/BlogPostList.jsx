@@ -13,7 +13,7 @@ export default function BlogPostList({
 			{sortedPosts.map((post) => (
 				<div
 					key={post.slug}
-					className="p-4 border border-gray-600 rounded bg-gray-800 shadow-xl hover:shadow-2xl hover:scale-105 transition-all duration-300 cursor-pointer focus:outline-none focus:ring-2 focus:ring-blue-400"
+					className="p-4 border border-gray-600 rounded bg-gray-800 shadow-xl hover:shadow-2xl hover:scale-103 transition-all duration-300 cursor-pointer focus:outline-none focus:ring-2 focus:ring-blue-400"
 					onClick={() => setModalSlug(post.slug)}
 					tabIndex={0}
 					role="button"

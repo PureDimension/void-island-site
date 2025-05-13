@@ -1,10 +1,24 @@
 "use client";
 import ReactMarkdown from "react-markdown";
 import rehypeRaw from "rehype-raw"; // 引入 rehype-raw 插件
+import { useRef } from "react";
 
 export default function BlogModal({ title, excerpt, content, onClose }) {
+	const modalRef = useRef(null);
+
+	// 点击遮罩关闭弹窗
+	function handleMaskClick(e) {
+		if (e.target === e.currentTarget) {
+			onClose();
+		}
+	}
+
 	return (
-		<div className="fixed inset-0 bg-black bg-opacity-70 z-50 flex justify-center items-center px-4">
+		<div
+			className="fixed inset-0 z-50 flex justify-center items-center px-4 backdrop-blur-sm bg-black/40"
+			onClick={handleMaskClick}
+			ref={modalRef}
+		>
 			<div className="bg-white text-black p-6 rounded shadow-lg max-w-3xl w-full max-h-[80vh] overflow-y-auto relative">
 				<button
 					onClick={onClose}
