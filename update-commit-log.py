@@ -46,7 +46,7 @@ def clean_commit_log():
 
         # 对路径进行转义
         lines = escape_file_paths(lines)
-
+        print(lines)
         # 根据文件的修改时间排序
         logs_with_timestamp = []
         for line in lines:
