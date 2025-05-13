@@ -1,0 +1,25 @@
+#!/bin/bash
+
+echo "[DEBUG] post-commit hook triggered"
+
+# 使用 LC_ALL=C 保证一致性，不会输出转义编码
+changed_files=$(git diff-tree -r --no-commit-id --name-only HEAD | sed 's/^"\(.*\)"$/\1/')
+
+echo "[DEBUG] All changed files:"
+echo "$changed_files"
+
+echo "[DEBUG] Filtering blog files..."
+blog_files=$(echo "$changed_files" | grep -E '^blog/[^/]+/[^/]+\.md$')
+
+if [ -z "$blog_files" ]; then
+  echo "[DEBUG] No blog files changed, exiting"
+  exit 0
+fi
+
+# 写入文件
+echo "$blog_files" | while read -r line; do
+  echo "$line" >> commit-log.txt
+done
+
+# 调用 JS 处理脚本（nodejs）
+python ./update-commit-log.py

@@ -1,0 +1,7 @@
+#!/bin/bash
+python update-commit-log.py
+
+if [[ `git status --porcelain | grep commit-log.js` ]]; then
+  git add commit-log.js
+  git commit -m "chore: auto-update commit-log.js"
+fi
