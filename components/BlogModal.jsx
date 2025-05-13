@@ -16,6 +16,21 @@ export default function BlogModal({ title, excerpt, content, onClose, isMobile }
     }
   }
 
+  // 解决手机浏览器出现顶部导航栏时，100vh不受影响，引起的跳变问题
+  const [height, setHeight] = useState(0);
+
+  useEffect(() => {
+    const updateHeight = () => {
+      const fullHeight = window.innerHeight;
+      const calcHeight = fullHeight - 140; // 对应你原来的 calc(100vh - 140px)
+      setHeight(calcHeight);
+    };
+
+    updateHeight();
+    window.addEventListener("resize", updateHeight);
+    return () => window.removeEventListener("resize", updateHeight);
+  }, []);
+
   return (
     <div
       className="fixed inset-0 z-50 flex justify-center items-center px-4 backdrop-blur-sm bg-black/40"
@@ -26,7 +41,7 @@ export default function BlogModal({ title, excerpt, content, onClose, isMobile }
         className="relative bg-white rounded shadow-lg"
         style={{
           width: isMobile ? "90%" : "700px",
-          height: "calc(100vh - 140px)",
+          height: `${height}px`,
           marginTop: "40px",
           marginBottom: "100px",
           overflow: "hidden",
