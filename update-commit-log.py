@@ -17,7 +17,7 @@ def escape_file_paths(file_paths):
 # 获取文件的元数据，使用 YAML 或 Markdown 文件头解析
 def get_metadata(file_path):
     try:
-        with open(file_path, "r", encoding="utf-8") as file:
+        with open(file_path, "r", encoding="utf-8", errors='ignore') as file:
             lines = file.readlines()
 
             # 查找 YAML front matter 格式的元数据
@@ -38,7 +38,7 @@ def get_metadata(file_path):
 # 清理并获取最新的 5 条记录
 def clean_commit_log():
     try:
-        with open(commit_log_file, "r", encoding="utf-8") as file:
+        with open(commit_log_file, "r", encoding="utf-8", errors='ignore') as file:
             lines = file.readlines()
 
         # 移除空行并过滤无效路径
@@ -46,7 +46,7 @@ def clean_commit_log():
 
         # 对路径进行转义
         lines = escape_file_paths(lines)
-        print(lines)
+
         # 根据文件的修改时间排序
         logs_with_timestamp = []
         for line in lines:
