@@ -16,10 +16,21 @@ const cleanCommitLog = () => {
   const logWithTimestamps = lines.map((line) => {
     const filePath = line.trim();
     const fileName = path.basename(filePath); // 获取文件名作为唯一标识
-    const stats = fs.statSync(path.join(process.cwd(), filePath)); // 获取文件状态信息
+    const fullFilePath = path.join(process.cwd(), filePath); // 获取文件的绝对路径
+
+    // 打印路径调试信息
+    console.log("[DEBUG] Checking file path:", fullFilePath);
+
+    // 检查文件是否存在
+    if (!fs.existsSync(fullFilePath)) {
+      console.error(`[ERROR] File not found: ${fullFilePath}`);
+      return null; // 返回 null 表示路径无效
+    }
+
+    const stats = fs.statSync(fullFilePath); // 获取文件状态信息
     const timestamp = stats.mtimeMs; // 获取文件修改时间戳
     return { filePath, timestamp, fileName };
-  });
+  }).filter(Boolean); // 过滤掉路径无效的条目
 
   // 根据时间戳降序排列
   logWithTimestamps.sort((a, b) => b.timestamp - a.timestamp);
