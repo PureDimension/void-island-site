@@ -6,6 +6,14 @@ from datetime import datetime
 commit_log_file = "commit-log.txt"
 commit_log_js_file = "commit-log.js"
 
+# 对文件路径进行转义
+def escape_file_paths(file_paths):
+    escaped_paths = []
+    for path in file_paths:
+        escaped_path = bytes(path, 'utf-8').decode('unicode_escape')
+        escaped_paths.append(escaped_path)
+    return escaped_paths
+
 # 获取文件的元数据，使用 YAML 或 Markdown 文件头解析
 def get_metadata(file_path):
     try:
@@ -35,6 +43,9 @@ def clean_commit_log():
 
         # 移除空行并过滤无效路径
         lines = [line.strip() for line in lines if line.strip()]
+
+        # 对路径进行转义
+        lines = escape_file_paths(lines)
 
         # 根据文件的修改时间排序
         logs_with_timestamp = []
@@ -119,10 +130,14 @@ def update_commit_log():
         write_commit_log_js(blog_metadata)
 
         print("[INFO] commit-log.js has been updated.")
+
+        # 清空 commit-log.txt
+        with open(commit_log_file, "w", encoding="utf-8") as file:
+            file.truncate(0)
+
     except Exception as e:
         print(f"[ERROR] Failed to update commit log: {e}")
 
 # 执行更新操作
 if __name__ == "__main__":
-    import pdb;pdb.set_trace()
     update_commit_log()
