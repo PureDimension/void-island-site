@@ -71,7 +71,7 @@
     ],
     "headline": 
     {
-      "title": "网站还在初步测试中，后续会加入很多好玩的东西，请期待后续更新！"
+      "description": "毕设搞完以前全空域静默状态！"
     },
     
     "selfIntroduce": 
@@ -81,6 +81,8 @@
       "github": "https://github.com/PureDimension/void-island-site",
       "github_svg": "/github_icon.svg",
       "author_icon": "/author_icon.svg",
+      "x_svg": "/x_icon.svg",
+      "x_lin":"/cant_open_from_this_side.png",
       "interest_link": [
         {
           "description": "游戏喜好列表",

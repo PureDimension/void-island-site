@@ -157,12 +157,15 @@ export default function HomeContent({ selfIntroPosts, headlinePosts }) {
         className="headline-box"
       >
         <div style={{ textAlign: "center", marginBottom: "20px" }}>
+          <h1 style={{ whiteSpace: "pre-line" , fontSize:"1.5em"}}>
+          系统公告📢
+          </h1>
           <h1 style={{ whiteSpace: "pre-line" }}>
-            {sectionsConfig.headline.title}
+            {sectionsConfig.headline.description}
           </h1>
         </div>
-        <div style={{ textAlign: "center", marginBottom: "20px" }}>
-          <h1>实时更新</h1>
+        <div style={{ textAlign: "center", marginBottom: "20px", fontSize:"1.5em" }}>
+          <h1>实时更新⌚</h1>
         </div>
         {headlinePosts.map((post, index) => (
           <div key={index} style={{ marginBottom: "10px", textAlign: "left" }}>

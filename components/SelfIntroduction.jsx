@@ -70,6 +70,21 @@ export default function SelfIntroduction({
             }}
           />
         </a>
+        {/* <a
+          href={sectionsConfig.selfIntroduce.github}
+          target="_blank"
+          rel="noopener noreferrer"
+        >
+          <img
+            src={sectionsConfig.selfIntroduce.x_svg}
+            alt="X"
+            style={{
+              width: "32px",
+              height: "32px",
+              marginBottom: "10px",
+            }}
+          />
+        </a> */}
       </div>
 
       {/* 个人描述、兴趣链接、友情链接 */}
