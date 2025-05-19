@@ -1,5 +1,11 @@
 export const logs = [
   {
+    "title": "\u957f\u7ebfDDL\u4f5c\u6218\u8bb0\u5f55",
+    "date": "2025-05-19 22:14:39",
+    "slug": "2025-5-19-\u957f\u7ebfDDL\u4f5c\u6218\u8bb0\u5f55",
+    "section": "cloud-leaf"
+  },
+  {
     "title": "20250514\u68a6\u65e5\u8bb0\u7d20\u6750",
     "date": "2025-05-16 10:20:52",
     "slug": "2025-5-14-\u68a6\u65e5\u8bb0",
