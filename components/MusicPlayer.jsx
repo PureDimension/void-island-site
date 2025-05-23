@@ -263,6 +263,7 @@ function MusicPlayer() {
 				transform: isMobile ? 'translateX(-50%)' : 'none', // 手机端居中对齐
 				minWidth: '320px',
 				maxWidth: '480px',
+				background: `rgba(0, 0, 0, 0.5)`, // 背景透明
 			  }}
 		>
 			{currentTrack.icon && (

@@ -15,17 +15,19 @@ export default function MainSectionPage({ posts, section_name }) {
 	const [selectedTag, setSelectedTag] = useState(null);
 	const [description, setDescription] = useState("");
 	const [titleOff, setTitleOff] = useState("");
+	const [themeColors, setThemeColors] = useState({
+		bg1: "#000000",
+		bg2: "#111111",
+	});
 	const [modalSlug, setModalSlug] = useState(null);
 	const [isMobile, setIsMobile] = useState(false);
 	const playerHeight = isMobile ? 100 : 0;
 
-	// 打开页面时根据url参数自动弹窗
 	useEffect(() => {
 		const urlSlug = searchParams.get("post");
 		if (urlSlug) setModalSlug(urlSlug);
 	}, [searchParams]);
 
-	// 打开弹窗时更新url，关闭时恢复
 	function handleSetModalSlug(slug) {
 		if (slug) {
 			router.replace(`?post=${encodeURIComponent(slug)}`, { scroll: false });
@@ -47,6 +49,7 @@ export default function MainSectionPage({ posts, section_name }) {
 		if (section) {
 			setDescription(section.description);
 			setTitleOff(section.titleOff);
+			setThemeColors(section.themeColors || { bg1: "#000", bg2: "#111" });
 		} else {
 			setDescription(defaultDescription);
 			setTitleOff(defaultDescription);
@@ -69,8 +72,17 @@ export default function MainSectionPage({ posts, section_name }) {
 
 	return (
 		<main
-			className="p-6 relative min-h-screen bg-black text-white"
-			style={{ paddingBottom: `${playerHeight}px` }}
+			className="p-6 relative min-h-screen text-white"
+			style={{
+				paddingBottom: `${playerHeight}px`,
+				background: `repeating-linear-gradient(
+					160deg,
+					${themeColors.bg1},
+					${themeColors.bg1} 60px,
+					${themeColors.bg2} 60px,
+					${themeColors.bg2} 120px
+				)`
+			}}
 		>
 			{modalPost && (
 				<BlogModal
@@ -78,7 +90,7 @@ export default function MainSectionPage({ posts, section_name }) {
 					excerpt={modalPost.excerpt}
 					content={modalPost.content}
 					onClose={() => handleSetModalSlug(null)}
-					isMobile={isMobile} // 传递是否为手机端
+					isMobile={isMobile}
 				/>
 			)}
 			<ReturnButton />
@@ -99,6 +111,7 @@ export default function MainSectionPage({ posts, section_name }) {
 				selectedTag={selectedTag}
 				setSelectedTag={setSelectedTag}
 				setModalSlug={handleSetModalSlug}
+				postBackground={themeColors.card} // 使用主题颜色作为背景
 			/>
 			{!isMobile && (
 				<SectionDescription

@@ -1,6 +1,6 @@
 这里是涟漪Rippin的个人网站！这里是需求文档
 
-- [ ] 设置section主页配色风格，使之符合section主题
+- [x] 设置section主页配色风格，使之符合section主题
 - [ ] 调整blog主页UI
 - [ ] 调整section页面返回按钮
 - [x] 将blog调整为时间倒序
