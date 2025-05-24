@@ -51,3 +51,18 @@ body {
 .animate-marquee {
   animation: marquee 6s linear infinite;
 }
+
+/* styles/globals.css */
+.darkTheme-scrollbar::-webkit-scrollbar {
+  width: 8px;
+}
+
+.darkTheme-scrollbar::-webkit-scrollbar-track {
+  background: #000000;
+}
+
+.darkTheme-scrollbar::-webkit-scrollbar-thumb {
+  background-color: #555555;
+  border-radius: 4px;
+  border: 2px solid #000000;
+}

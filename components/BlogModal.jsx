@@ -39,7 +39,7 @@ export default function BlogModal({ title, excerpt, content, onClose, isMobile }
       ref={modalRef}
     >
       <div
-        className={`relative rounded shadow-lg ${isDarkMode ? "bg-black border-gray-700" : "bg-white border-gray-400"}`}
+        className="relative bg-white rounded shadow-lg"
         style={{
           width: isMobile ? "90%" : "700px",
           height: `${height}px`,
@@ -59,7 +59,7 @@ export default function BlogModal({ title, excerpt, content, onClose, isMobile }
         </button>
 
         {/* 内容区域 */}
-        <div className={`${isDarkMode? "bg-black text-white" : "bg-white text-black"} p-6 overflow-y-auto h-full`}>
+        <div className={`${isDarkMode? "bg-black text-white darkTheme-scrollbar" : "bg-white text-black"} p-6 overflow-y-auto h-full`}>
           {/* Title & Excerpt */}
           <div className="mb-6">
             {title && <h1 className="text-3xl font-bold text-center">{title}</h1>}
