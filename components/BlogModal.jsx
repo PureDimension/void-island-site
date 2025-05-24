@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef } from "react";
 import ReactMarkdown from "react-markdown";
 import rehypeRaw from "rehype-raw";
+import { useTheme } from "@/lib/theme";
 
 export default function BlogModal({ title, excerpt, content, onClose, isMobile }) {
   const modalRef = useRef(null);
@@ -18,7 +19,7 @@ export default function BlogModal({ title, excerpt, content, onClose, isMobile }
 
   // 解决手机浏览器出现顶部导航栏时，100vh不受影响，引起的跳变问题
   const [height, setHeight] = useState(0);
-
+  const { isDarkMode } = useTheme();
   useEffect(() => {
     const updateHeight = () => {
       const fullHeight = window.innerHeight;
@@ -52,18 +53,18 @@ export default function BlogModal({ title, excerpt, content, onClose, isMobile }
         {/* 关闭按钮 */}
         <button
           onClick={onClose}
-          className="absolute top-4 right-4 flex items-center justify-center w-8 h-8 rounded-full border-2 border-black text-black font-bold hover:bg-gray-200 transition"
+          className={`absolute top-4 right-4 flex items-center justify-center w-8 h-8 rounded-full border-2 ${isDarkMode? "border-white text-white hover:bg-gray-600" : "border-black text-black hover:bg-gray-200"} font-bold  transition`}
         >
           X
         </button>
 
         {/* 内容区域 */}
-        <div className="bg-white text-black p-6 overflow-y-auto h-full">
+        <div className={`${isDarkMode? "bg-black text-white" : "bg-white text-black"} p-6 overflow-y-auto h-full`}>
           {/* Title & Excerpt */}
           <div className="mb-6">
             {title && <h1 className="text-3xl font-bold text-center">{title}</h1>}
             {excerpt && (
-              <p className="text-xl italic text-center text-gray-600 mt-2">{excerpt}</p>
+              <p className={`text-xl italic text-center ${isDarkMode ? "text-gray-400" : "text-gray-600"} mt-2`}>{excerpt}</p>
             )}
           </div>
 
@@ -103,7 +104,7 @@ export default function BlogModal({ title, excerpt, content, onClose, isMobile }
                   </pre>
                 ),
                 blockquote: ({ children }) => (
-                  <blockquote className="border-l-4 border-gray-400 pl-4 italic text-gray-700 mb-3">
+                  <blockquote className={`border-l-4 border-gray-400 pl-4 italic ${isDarkMode ? "text-gray-300" : "text-gray-700"} mb-3`}>
                     {children}
                   </blockquote>
                 ),
