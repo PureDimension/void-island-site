@@ -39,7 +39,7 @@ export default function BlogModal({ title, excerpt, content, onClose, isMobile }
       ref={modalRef}
     >
       <div
-        className="relative bg-white rounded shadow-lg"
+        className={`relative rounded shadow-lg ${isDarkMode ? "bg-black border-gray-700" : "bg-white border-gray-400"}`}
         style={{
           width: isMobile ? "90%" : "700px",
           height: `${height}px`,
