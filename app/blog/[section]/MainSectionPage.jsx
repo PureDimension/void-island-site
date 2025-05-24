@@ -5,9 +5,10 @@ import BlogModal from "@/components/BlogModal";
 import KeywordIndex from "@/components/KeywordIndex";
 import BlogPostList from "@/components/BlogPostList";
 import SectionDescription from "@/components/SectionDescription";
-import ReturnButton from "@/components/ReturnButton";
+import ReturnMenus from "@/components/ReturnMenus";
 import { useState, useEffect } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
+import { useTheme } from "@/lib/theme";
 
 export default function MainSectionPage({ posts, section_name }) {
 	const router = useRouter();
@@ -21,6 +22,7 @@ export default function MainSectionPage({ posts, section_name }) {
 	});
 	const [modalSlug, setModalSlug] = useState(null);
 	const [isMobile, setIsMobile] = useState(false);
+	const { isDarkMode } = useTheme();
 	const playerHeight = isMobile ? 100 : 0;
 
 	useEffect(() => {
@@ -69,21 +71,35 @@ export default function MainSectionPage({ posts, section_name }) {
 	const filteredPosts = selectedTag
 		? posts.filter((post) => post.tags.includes(selectedTag))
 		: posts;
-
+  
 	return (
 		<main
-			className="p-6 relative min-h-screen text-white"
+		className="p-6 relative min-h-screen text-white"
+		style={{
+		  paddingBottom: `${playerHeight}px`,
+		  backgroundImage: `repeating-linear-gradient(
+			160deg,
+			${themeColors.bg1},
+			${themeColors.bg1} 60px,
+			${themeColors.bg2} 60px,
+			${themeColors.bg2} 120px
+		  )`,
+		  transition: "background-color 0.5s ease",
+		  position: "relative",
+		}}
+	  >
+			{/* 遮罩层 */}
+			<div
 			style={{
-				paddingBottom: `${playerHeight}px`,
-				background: `repeating-linear-gradient(
-					160deg,
-					${themeColors.bg1},
-					${themeColors.bg1} 60px,
-					${themeColors.bg2} 60px,
-					${themeColors.bg2} 120px
-				)`
+				position: "absolute",
+				inset: 0,
+				backgroundColor: "#0a0a0a",
+				opacity: isDarkMode ? 1 : 0,
+				pointerEvents: "none",
+				transition: "opacity 0.5s ease",
+				zIndex: 0,
 			}}
-		>
+			/>
 			{modalPost && (
 				<BlogModal
 					title={modalPost.title}
@@ -93,7 +109,7 @@ export default function MainSectionPage({ posts, section_name }) {
 					isMobile={isMobile}
 				/>
 			)}
-			<ReturnButton />
+			<ReturnMenus />
 			<KeywordIndex
 				allTags={allTags}
 				selectedTag={selectedTag}
@@ -111,7 +127,7 @@ export default function MainSectionPage({ posts, section_name }) {
 				selectedTag={selectedTag}
 				setSelectedTag={setSelectedTag}
 				setModalSlug={handleSetModalSlug}
-				postBackground={themeColors.card} // 使用主题颜色作为背景
+				postBackground={'rgba(0, 0, 0, 0.5)'} // 未来再改成配置文件
 			/>
 			{!isMobile && (
 				<SectionDescription

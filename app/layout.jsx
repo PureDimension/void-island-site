@@ -3,6 +3,7 @@
 import { FilterProvider, useFilter } from "@/components/FilterContext";
 import "./globals.css";
 import MusicPlayer from "@/components/MusicPlayer";
+import { ThemeProvider } from "@/lib/theme";
 
 function LayoutContent({ children }) {
 	const { filterOn } = useFilter();
@@ -64,7 +65,11 @@ export default function Layout({ children }) {
 		<html lang="en">
 			<body>
 				<FilterProvider>
-					<LayoutContent>{children}</LayoutContent>
+					<ThemeProvider>
+						<LayoutContent>
+							{children}
+						</LayoutContent>
+					</ThemeProvider>
 					<MusicPlayer /> {/* 始终悬浮的播放器组件 */}
 				</FilterProvider>
 			</body>
