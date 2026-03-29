@@ -1,15 +1,13 @@
 const { STAGE_1_ID } = require("../flow");
 
-module.exports = {
+const stage1 = {
   stageId: STAGE_1_ID,
-  title: "第一关·IO区",
-  objective: "击败全部敌人，包括密文",
+  title: "第一关·IO 区",
+  objective: "击败所有敌人（包括密文）",
   enemyLogicText: [
-    "读取上一个主动攻击的敌方单位。",
-    "该单位不存在或已失活时，本回合不攻击。",
-    "否则，在己方中寻找 POWER 高于该单位且最低的一个单位。",
-    "找到后，由该单位攻击前述敌方单位。",
-    "找不到时，本回合不攻击。",
+    "如果 上一个主动攻击的玩家方单位存活：",
+    "  如果 电脑方单位中存在 POWER 高于它且最低的一个单位：",
+    "    该单位 对 玩家方单位 发动攻击"
   ],
   enemyAi: "stage1-passive-defense",
   lineup: {
@@ -23,9 +21,11 @@ module.exports = {
     enemyUnits: [
       { template: "alpha", id: "e-alpha", slot: 1, side: "enemy", name: "安全护卫α" },
       { template: "beta", id: "e-beta", slot: 3, side: "enemy", name: "安全护卫β" },
-      { template: "gamma", id: "e-gamma", slot: 5, side: "enemy", name: "安全护卫γ" },
+      { template: "gamma", id: "e-gamma", slot: 5, side: "enemy", name: "【纸鸢】" },
       { template: "cipher", id: "e-cipher", slot: 7, side: "enemy", name: "密文" },
     ],
   },
   initialLogText: "第一关开始。",
 };
+
+module.exports = stage1;

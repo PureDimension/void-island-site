@@ -1389,8 +1389,12 @@ function StyleBlock() {
           0 18px 40px rgba(0, 0, 0, 0.32),
           0 0 42px rgba(72, 187, 255, 0.18);
         background:
-          linear-gradient(180deg, rgba(7, 20, 45, 0.94), rgba(4, 14, 33, 0.92));
-        backdrop-filter: blur(18px);
+          linear-gradient(180deg, rgba(8, 22, 48, 0.985), rgba(5, 16, 36, 0.975));
+        -webkit-backdrop-filter: none;
+        backdrop-filter: none;
+        text-rendering: optimizeLegibility;
+        -webkit-font-smoothing: antialiased;
+        -moz-osx-font-smoothing: grayscale;
       }
 
       .guide-card.side {
@@ -1405,6 +1409,7 @@ function StyleBlock() {
         font-size: 0.72rem;
         letter-spacing: 0.18em;
         color: rgba(136, 226, 255, 0.7);
+        text-rendering: geometricPrecision;
       }
 
       .guide-text {
@@ -1412,12 +1417,14 @@ function StyleBlock() {
         font-size: 0.82rem;
         line-height: 1.72;
         color: rgba(231, 248, 255, 0.92);
+        text-rendering: geometricPrecision;
       }
 
       .guide-hint {
         margin-top: 0.55rem;
         font-size: 0.72rem;
         color: rgba(153, 228, 255, 0.68);
+        text-rendering: geometricPrecision;
       }
 
       .guide-callouts {
@@ -1435,6 +1442,7 @@ function StyleBlock() {
         color: rgba(227, 247, 255, 0.92);
         font-size: 0.74rem;
         line-height: 1.5;
+        text-rendering: geometricPrecision;
       }
 
       .unit-cell {
@@ -1714,6 +1722,8 @@ function StyleBlock() {
       .detail-card {
         min-height: 0;
         overflow: auto;
+        scrollbar-width: thin;
+        scrollbar-color: rgba(118, 215, 255, 0.78) rgba(10, 26, 52, 0.34);
       }
 
       .panel-kicker {
@@ -1774,6 +1784,51 @@ function StyleBlock() {
         margin-top: 0.2rem;
         min-height: 0;
         overflow: auto;
+        scrollbar-width: thin;
+        scrollbar-color: rgba(255, 170, 123, 0.84) rgba(40, 18, 16, 0.3);
+      }
+
+      .detail-card::-webkit-scrollbar,
+      .script-lines::-webkit-scrollbar {
+        width: 8px;
+      }
+
+      .detail-card::-webkit-scrollbar-track,
+      .script-lines::-webkit-scrollbar-track {
+        border-radius: 999px;
+        background: rgba(6, 20, 42, 0.18);
+        box-shadow: inset 0 0 0 1px rgba(134, 220, 255, 0.08);
+      }
+
+      .detail-card::-webkit-scrollbar-thumb,
+      .script-lines::-webkit-scrollbar-thumb {
+        border-radius: 999px;
+        border: 1px solid rgba(5, 16, 36, 0.68);
+        background-clip: padding-box;
+        transition: background 160ms ease, border-color 160ms ease, box-shadow 160ms ease;
+      }
+
+      .detail-card::-webkit-scrollbar-thumb {
+        background: linear-gradient(180deg, rgba(132, 226, 255, 0.92), rgba(58, 146, 255, 0.74));
+        box-shadow: 0 0 10px rgba(66, 181, 255, 0.2);
+      }
+
+      .script-lines::-webkit-scrollbar-thumb {
+        background: linear-gradient(180deg, rgba(255, 188, 142, 0.94), rgba(255, 124, 84, 0.72));
+        box-shadow: 0 0 10px rgba(255, 142, 101, 0.18);
+      }
+
+      .detail-card:hover::-webkit-scrollbar-thumb {
+        background: linear-gradient(180deg, rgba(155, 235, 255, 0.96), rgba(76, 171, 255, 0.82));
+      }
+
+      .script-lines:hover::-webkit-scrollbar-thumb {
+        background: linear-gradient(180deg, rgba(255, 203, 165, 0.96), rgba(255, 145, 96, 0.8));
+      }
+
+      .detail-card::-webkit-scrollbar-corner,
+      .script-lines::-webkit-scrollbar-corner {
+        background: transparent;
       }
 
       .detail-head {
