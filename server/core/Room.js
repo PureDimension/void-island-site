@@ -144,7 +144,6 @@ updateConfig({ uuid, config }) {
   if (!this.checkHost(uuid)) return { success: false, msg: "只有列车长有权调整配置" };
   if (this.status !== 'WAITING') return { success: false, msg: "列车已发车，无法调整配置" };
   
-  if (config.ruleId) this.ruleId = config.ruleId;
   if (config.ruleId && config.ruleId !== this.ruleId) {
       // 从后端全局变量直接索引 (假设 gameMetaMap 在 Room.js 可访问，或通过构造/参数传入)
       // 建议在 socketHandler 调用此方法时确保全局变量已加载
