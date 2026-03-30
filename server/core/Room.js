@@ -233,13 +233,26 @@ updateConfig({ uuid, config }) {
     else if(playerIds.length > (this.meta.maxPlayers || 999)) {
       return { success: false, msg: `乘客过多，最多只能有 ${this.meta.maxPlayers} 人` };
     }
-    if(playerIds.length < this.seats.length) {
-      return { success: false, msg: `请调整人数坐满所有空位` };
+    if (playerIds.length < this.seats.length && false) {
+      return { success: false, msg: `请房主点击左上角游戏` };
     }
 
     // 检查是否全员准备
     const allReady = playerIds.every(id => id === this.hostId || this.readyStatus[id]);
     if (!allReady) return { success: false, msg: "仍有乘客未准备就绪" };
+
+    const shouldAutoResizeSeats = playerIds.length < this.seats.length;
+    const originalSeats = shouldAutoResizeSeats ? [...this.seats] : null;
+
+    if (shouldAutoResizeSeats) {
+      const resizeResult = this.updateConfig({
+        uuid,
+        config: { maxSeats: playerIds.length }
+      });
+      if (!resizeResult.success) {
+        return resizeResult;
+      }
+    }
 
     try {
       // 动态加载逻辑类 (假设路径: game-scripts/rps/logic.js)
@@ -257,6 +270,9 @@ updateConfig({ uuid, config }) {
       
       return { success: true };
     } catch (err) {
+      if (originalSeats) {
+        this.seats = originalSeats;
+      }
       console.error(`[Room ${this.roomId}] 启动游戏失败:`, err);
       return { success: false, msg: "游戏引擎装载失败" };
     }

@@ -60,7 +60,7 @@ const UNIT_CATALOG = {
   robot: defineUnit({
     name: "【影子】",
     power: 3,
-    description: "◆【显现】：整局仅一次。仅当本单位作为攻击者时，可将本次战斗中的 POWER 视为 1-9 的指定值。若本单位被摧毁，则游戏失败。",
+    description: "◆【显现】：整场游戏所有关卡仅一次。仅当本单位作为攻击者时，可将本次战斗中的 POWER 视为 1-9 的指定值。若本单位被摧毁，则游戏失败。",
     tags: ["◆"],
     hooks: {
       modifyCombatPower: [
@@ -300,7 +300,7 @@ const UNIT_CATALOG = {
     name: "巨噬细胞-指挥",
     power: 4,
     description: `▲：若本单位被选为攻击者，则令己方中 POWER 最低且没有任何 BUFF 的一个单位获得【${BUFF_CATALOG[ANTIBODY_BUFF].shortLabel}】。`
-      + "目标为没有【标记】且没有【抗体】、并且 POWER 最低的另一个单位。"
+      + "电脑攻击目标为没有【标记】且没有【抗体】、并且 POWER 最低的另一个单位。"
       + "战斗前：目标 POWER 永久 -2，本单位 POWER 永久 +2。",
     tags: ["▲"],
     hooks: {
@@ -339,7 +339,7 @@ const UNIT_CATALOG = {
     name: "调度B细胞-网关",
     power: 6,
     description: `▲：若本单位被选为攻击者，则令己方中 POWER 最高且没有任何 BUFF 的一个单位获得【${BUFF_CATALOG[ANTIBODY_BUFF].shortLabel}】。`
-      + "目标为没有【标记】且没有【抗体】、并且 POWER 最高的另一个单位。"
+      + "电脑攻击目标为没有【标记】且没有【抗体】、并且 POWER 最高的另一个单位。"
       + "本单位不直接战斗，而是令己方所有存活的“巡检单核体”“清理溶酶虫”依次攻击目标。"
       + "▼：行动结束后，复活己方所有已阵亡的“巡检单核体”“清理溶酶虫”“补体屏障”。",
     tags: ["▲", "▼"],
@@ -377,7 +377,7 @@ const UNIT_CATALOG = {
   "killer-t-protocol": defineUnit({
     name: "杀手T细胞-协议",
     power: 5,
-    description: `▲：目标为一个持有【${BUFF_CATALOG[MARK_BUFF].shortLabel}】的其他单位。若与持有【${BUFF_CATALOG[MARK_BUFF].shortLabel}】的单位发生战斗，则本次战斗必定胜利。`,
+    description: `▲：电脑攻击目标为一个持有【${BUFF_CATALOG[MARK_BUFF].shortLabel}】的其他单位。若与持有【${BUFF_CATALOG[MARK_BUFF].shortLabel}】的单位发生战斗，则本次战斗必定胜利。`,
     tags: ["▲"],
     hooks: {
       modifyCombatPower: [
@@ -418,7 +418,7 @@ const UNIT_CATALOG = {
   "cleaner-lysosome": defineUnit({
     name: "清理溶酶虫",
     power: 2,
-    description: "▲：若目标 POWER > 3，则目标 POWER -3；否则，直接摧毁目标。",
+    description: "▲：若目标 POWER > 5，则目标 POWER -3；否则，直接摧毁目标。",
     tags: ["▲"],
     hooks: {
       beforeCombat: [
@@ -427,7 +427,7 @@ const UNIT_CATALOG = {
             return;
           }
 
-          if (defender.power > 3) {
+          if (defender.power > 5) {
             defender.power -= 3;
             combatControl.skipResolution = true;
             runtime.addLog(state, "hook", `${self.name} 使 ${defender.name} 的 POWER -3。`, {

@@ -129,7 +129,9 @@ export default function RoomClientPage({ roomId }) {
                             <option key={num} value={num} disabled={num < playerCount}>{num} 人</option>
                           ))}
                         </select>
-                        <ChevronDown size={8} className="absolute right-0.5 pointer-events-none text-blue-400 opacity-0 group-hover:opacity-100 transition-opacity" />
+                        <div className="absolute right-1.5 pointer-events-none text-blue-500/60">
+                          <ChevronDown size={10} strokeWidth={4} />
+                        </div>
                       </div>
                     ) : (
                       /* 乘客模式：仅显示静态文本 */

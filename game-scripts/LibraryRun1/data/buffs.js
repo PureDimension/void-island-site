@@ -27,7 +27,7 @@ const BUFF_CATALOG = {
     key: "virus",
     label: "病毒",
     shortLabel: "病毒",
-    description: "本单位会持续到下一个回合结束前临时改变阵营，并以新阵营的身份视为“己方”与“敌方”。在此期间，它不可被原敌对阵营选为攻击目标，但可被新阵营选为攻击者。下一个回合结束时移除。",
+    description: "本单位会持续到下一个回合结束前临时改变阵营，并以新阵营的身份处理“己方”与“敌方”描述。下一个回合结束时移除。",
     stackable: false,
     timing: "turn-end",
   },

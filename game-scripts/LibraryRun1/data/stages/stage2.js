@@ -31,7 +31,6 @@ module.exports = {
         id: "s2-gateway",
         slot: 3,
         side: "enemy",
-        description: "◆：若本单位被选为攻击者，则令己方中 POWER 最高且没有任何 BUFF 的一个单位获得【抗体】。攻击目标为没有【标记】【抗体】且 POWER 最高的一个其他单位。仅当本单位作为攻击者时，才不直接战斗，而是令己方所有存活的“巡检单核体”“清理溶酶虫”依次攻击目标；若本单位作为被攻击者，则按自身 POWER 正常参与战斗。▼：行动结束后，复活己方所有已阵亡的“巡检单核体”“清理溶酶虫”“补体屏障”。",
       },
       { template: "killer-t-protocol", id: "s2-killer", slot: 5, side: "enemy" },
       { template: "patrol-monocyte", id: "s2-monocyte", slot: 7, side: "enemy" },
