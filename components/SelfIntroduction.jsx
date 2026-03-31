@@ -130,35 +130,48 @@ export default function SelfIntroduction({
               gap: "8px",
             }}
           >
-            {sectionsConfig.selfIntroduce.interest_link.map((item, idx) => (
-              <div
-                key={idx}
-                onClick={() => openModal(item.link)}
-                style={{
-                  cursor: "pointer",
-                  padding: "8px 10px",
-                  borderRadius: "8px",
-                  background: "linear-gradient(145deg, #6a6a6a, #4e4e4e)",
-                  boxShadow:
-                    "3px 3px 6px rgba(0,0,0,0.4), -2px -2px 5px rgba(255,255,255,0.1)",
-                  fontSize: "12px",
-                  textAlign: "center",
-                  transition: "all 0.2s ease",
-                }}
-                onMouseEnter={(e) => {
-                  e.currentTarget.style.transform = "translateY(-2px)";
-                  e.currentTarget.style.boxShadow =
-                    "5px 5px 10px rgba(0,0,0,0.5), -3px -3px 6px rgba(255,255,255,0.15)";
-                }}
-                onMouseLeave={(e) => {
-                  e.currentTarget.style.transform = "none";
-                  e.currentTarget.style.boxShadow =
-                    "3px 3px 6px rgba(0,0,0,0.4), -2px -2px 5px rgba(255,255,255,0.1)";
-                }}
-              >
-                {item.description}
-              </div>
-            ))}
+            {sectionsConfig.selfIntroduce.interest_link.map((item, idx) => {
+              const isStarterHighlight =
+                item.description === "新人必看" || item.link === "WebsiteIntroduction";
+              const baseShadow = isStarterHighlight
+                ? "0 0 0 1px rgba(255,255,255,0.22), 0 0 18px rgba(255, 216, 107, 0.48), 0 0 34px rgba(95, 168, 255, 0.34), 3px 3px 6px rgba(0,0,0,0.4), -2px -2px 5px rgba(255,255,255,0.12)"
+                : "3px 3px 6px rgba(0,0,0,0.4), -2px -2px 5px rgba(255,255,255,0.1)";
+              const hoverShadow = isStarterHighlight
+                ? "0 0 0 1px rgba(255,255,255,0.28), 0 0 22px rgba(255, 216, 107, 0.62), 0 0 42px rgba(95, 168, 255, 0.4), 5px 5px 10px rgba(0,0,0,0.5), -3px -3px 6px rgba(255,255,255,0.16)"
+                : "5px 5px 10px rgba(0,0,0,0.5), -3px -3px 6px rgba(255,255,255,0.15)";
+
+              return (
+                <div
+                  key={idx}
+                  onClick={() => openModal(item.link)}
+                  style={{
+                    cursor: "pointer",
+                    padding: "8px 10px",
+                    borderRadius: "8px",
+                    background: isStarterHighlight
+                      ? "linear-gradient(145deg, #d8bf68, #9f7b1f)"
+                      : "linear-gradient(145deg, #6a6a6a, #4e4e4e)",
+                    border: isStarterHighlight ? "1px solid rgba(255, 236, 168, 0.9)" : "1px solid transparent",
+                    boxShadow: baseShadow,
+                    fontSize: "12px",
+                    textAlign: "center",
+                    color: isStarterHighlight ? "#fff6d6" : "white",
+                    textShadow: isStarterHighlight ? "0 0 8px rgba(255, 239, 180, 0.35)" : "none",
+                    transition: "all 0.2s ease",
+                  }}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.transform = "translateY(-2px)";
+                    e.currentTarget.style.boxShadow = hoverShadow;
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.transform = "none";
+                    e.currentTarget.style.boxShadow = baseShadow;
+                  }}
+                >
+                  {item.description}
+                </div>
+              );
+            })}
           </div>
         </div>
 

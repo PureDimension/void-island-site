@@ -112,7 +112,7 @@
   
   "selfIntroduce": 
   {
-    "description": "这里是涟漪Rippin的空岛世界主站！本人高浓度ENFP，特质为电波系·白日梦，目标是体验各种各样的事情。欢迎和我交朋友！",
+    "description": "这里是涟漪Rippin的空岛世界主站！第一次进站可以看下方的新人必看！本人高浓度ENFP，目标是体验各种各样的事情。欢迎和我交朋友！",
     "author": "涟漪Rippin",
     "github": "https://github.com/PureDimension/void-island-site",
     "github_svg": "/github_icon.svg",
@@ -131,6 +131,10 @@
       {
         "description": "人生目标",
         "link": "Targets"
+      },
+      {
+        "description": "新人必看",
+        "link": "WebsiteIntroduction"
       }
     ],
     "friendship_link": [
