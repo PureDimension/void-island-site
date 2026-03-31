@@ -190,7 +190,25 @@ function getLivingUnits(units) {
   return units.filter((unit) => unit.alive);
 }
 
-function priorityCompare(a, b) {
+function resolvePriorityReferenceSide(reference) {
+  if (!reference) {
+    return null;
+  }
+  if (typeof reference === "string") {
+    return reference;
+  }
+  return getControlSide(reference);
+}
+
+function priorityCompare(a, b, reference = null) {
+  const referenceSide = resolvePriorityReferenceSide(reference);
+  if (referenceSide) {
+    const aIsEnemy = getControlSide(a) !== referenceSide;
+    const bIsEnemy = getControlSide(b) !== referenceSide;
+    if (aIsEnemy !== bIsEnemy) {
+      return aIsEnemy ? -1 : 1;
+    }
+  }
   if (a.side !== b.side) {
     return a.side === "enemy" ? -1 : 1;
   }
@@ -201,21 +219,21 @@ function sortBySlot(units) {
   return [...units].sort((a, b) => a.slot - b.slot);
 }
 
-function sortByPriority(units) {
-  return [...units].sort(priorityCompare);
+function sortByPriority(units, reference = null) {
+  return [...units].sort((a, b) => priorityCompare(a, b, reference));
 }
 
-function pickByPriority(units) {
-  return sortByPriority(units)[0] || null;
+function pickByPriority(units, reference = null) {
+  return sortByPriority(units, reference)[0] || null;
 }
 
-function pickByPower(units, mode) {
+function pickByPower(units, mode, reference = null) {
   if (!units.length) {
     return null;
   }
   const values = units.map((unit) => unit.power);
   const targetPower = mode === "highest" ? Math.max(...values) : Math.min(...values);
-  return pickByPriority(units.filter((unit) => unit.power === targetPower));
+  return pickByPriority(units.filter((unit) => unit.power === targetPower), reference);
 }
 
 function alivePlayerUnits(state) {
@@ -1275,7 +1293,20 @@ module.exports = class LibraryRun1Runtime extends BaseGame {
       }
 
       const power = Number(data?.power);
-      if (state.campaign.overloadUsed || Number.isNaN(power) || power < 1 || power > 9) {
+      if (state.campaign.overloadUsed) {
+        return state;
+      }
+
+      if (data?.power === null) {
+        if (state.battle.pendingTurnEffects.overloadPower === null) {
+          return state;
+        }
+        pushHistory(state);
+        state.battle.pendingTurnEffects.overloadPower = null;
+        return state;
+      }
+
+      if (Number.isNaN(power) || power < 1 || power > 9) {
         return state;
       }
 

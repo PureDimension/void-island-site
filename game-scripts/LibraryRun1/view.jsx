@@ -652,8 +652,9 @@ function SidePanel({
                       type="button"
                       className={`mini-button ${manifestValue === value ? "strong" : ""}`}
                       onClick={() => {
-                        setManifestValue(value);
-                        onSetManifest(value);
+                        const nextValue = manifestValue === value ? null : value;
+                        setManifestValue(nextValue);
+                        onSetManifest(nextValue);
                       }}
                     >
                       {value}
@@ -693,7 +694,7 @@ export default function LibraryRun1View({ gameState, onAction }) {
   const [inspectId, setInspectId] = useState(null);
   const [showLog, setShowLog] = useState(false);
   const [showRules, setShowRules] = useState(false);
-  const [manifestValue, setManifestValue] = useState(5);
+  const [manifestValue, setManifestValue] = useState(null);
   const [arrow, setArrow] = useState(null);
 
   useHideMusicPlayer();
@@ -746,6 +747,10 @@ export default function LibraryRun1View({ gameState, onAction }) {
     setInspectId(defaultUnit?.id || null);
     setArrow(null);
   }, [battle?.stageId]);
+
+  useEffect(() => {
+    setManifestValue(battle?.pendingTurnEffects?.overloadPower ?? null);
+  }, [battle?.pendingTurnEffects?.overloadPower]);
 
   useEffect(() => {
     const highlightedId = findHighlightedUnit(guideStep);

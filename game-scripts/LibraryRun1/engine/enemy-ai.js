@@ -28,7 +28,7 @@ function stage1PassiveDefense(context) {
 
   const candidates = context.getEnemyActorPool()
     .filter((unit) => unit.power > target.power);
-  const attacker = context.pickByPower(candidates, "lowest");
+  const attacker = context.pickByPower(candidates, "lowest", target);
 
   if (!attacker) {
     return {
@@ -72,7 +72,8 @@ function stage2TargetPool(context, attacker) {
 function stage2MacrophageAction(context, attacker) {
   const receiver = context.pickByPower(
     context.getFriendlySupportUnits(context.state, attacker).filter((unit) => !context.hasAnyBuff(unit)),
-    "lowest"
+    "lowest",
+    attacker
   );
   const target = context.pickByPower(
     stage2TargetPool(context, attacker).filter(
@@ -80,7 +81,8 @@ function stage2MacrophageAction(context, attacker) {
         && !context.hasBuff(unit, MARK_BUFF)
         && !context.hasBuff(unit, ANTIBODY_BUFF)
     ),
-    "lowest"
+    "lowest",
+    attacker
   );
 
   return target ? {
@@ -95,7 +97,8 @@ function stage2MacrophageAction(context, attacker) {
 function stage2GatewayAction(context, attacker) {
   const receiver = context.pickByPower(
     context.getFriendlySupportUnits(context.state, attacker).filter((unit) => !context.hasAnyBuff(unit)),
-    "highest"
+    "highest",
+    attacker
   );
   const target = context.pickByPower(
     stage2TargetPool(context, attacker).filter(
@@ -103,7 +106,8 @@ function stage2GatewayAction(context, attacker) {
         && !context.hasBuff(unit, MARK_BUFF)
         && !context.hasBuff(unit, ANTIBODY_BUFF)
     ),
-    "highest"
+    "highest",
+    attacker
   );
 
   if (!target) {
@@ -114,7 +118,7 @@ function stage2GatewayAction(context, attacker) {
     context.getFriendlySupportUnits(context.state, attacker)
       .filter((unit) => unit.alive)
       .filter((unit) => unit.code === "patrol-monocyte" || unit.code === "cleaner-lysosome")
-  ).map((unit) => unit.id);
+  , attacker).map((unit) => unit.id);
 
   return {
     kind: "gateway-burst",
@@ -129,7 +133,7 @@ function stage2GatewayAction(context, attacker) {
 function stage2KillerAction(context, attacker) {
   const target = context.pickByPriority(
     stage2TargetPool(context, attacker).filter((unit) => context.hasBuff(unit, MARK_BUFF))
-  );
+  , attacker);
 
   return target ? {
     kind: "combat",

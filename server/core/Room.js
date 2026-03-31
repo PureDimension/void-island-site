@@ -233,9 +233,6 @@ updateConfig({ uuid, config }) {
     else if(playerIds.length > (this.meta.maxPlayers || 999)) {
       return { success: false, msg: `乘客过多，最多只能有 ${this.meta.maxPlayers} 人` };
     }
-    if (playerIds.length < this.seats.length && false) {
-      return { success: false, msg: `请房主点击左上角游戏` };
-    }
 
     // 检查是否全员准备
     const allReady = playerIds.every(id => id === this.hostId || this.readyStatus[id]);

@@ -60,7 +60,7 @@ const UNIT_CATALOG = {
   robot: defineUnit({
     name: "【影子】",
     power: 3,
-    description: "◆【显现】：整场游戏所有关卡仅一次。仅当本单位作为攻击者时，可将本次战斗中的 POWER 视为 1-9 的指定值。若本单位被摧毁，则游戏失败。",
+    description: "◆【显现】：整场游戏所有关卡仅一次。仅当本单位主动攻击时，可将本次战斗中的 POWER 视为 1-9 的指定值。若本单位被摧毁，则游戏失败。",
     tags: ["◆"],
     hooks: {
       modifyCombatPower: [
@@ -81,7 +81,7 @@ const UNIT_CATALOG = {
   "signal-bee": defineUnit({
     name: "信号工蜂",
     power: 1,
-    description: "▲：若上一个发动攻击者存活，则本次战斗 POWER + 该单位当前 POWER。",
+    description: "▲：若上一个主动攻击者存活，则本次战斗 POWER + 该单位当前 POWER。",
     tags: ["▲"],
     hooks: {
       modifyCombatPower: [
@@ -102,7 +102,7 @@ const UNIT_CATALOG = {
         (runtime, battle) => {
           const previousAttacker = runtime.findUnit(battle, battle.lastCombatAttackerId);
           return {
-            key: "上一个攻击者",
+            key: "上一个主动攻击者",
             value: previousAttacker?.alive ? previousAttacker.name : "当前没有存活的对象",
           };
         },
@@ -208,7 +208,7 @@ const UNIT_CATALOG = {
   "disguise-module": defineUnit({
     name: "伪装模块",
     power: 3,
-    description: "●：除己方回合中可被己方主动选为攻击者外，其余情况下，本单位被视为敌方单位。",
+    description: "●：除己方回合中可主动攻击外，其余情况下，本单位被视为敌方单位。",
     tags: ["●"],
     display: {
       mode: "split",
@@ -220,7 +220,7 @@ const UNIT_CATALOG = {
   alpha: defineUnit({
     name: "安全护卫α",
     power: 5,
-    description: "▲：若本单位作为攻击者进入战斗，则本次战斗 POWER +3。",
+    description: "▲：本单位主动发起攻击时，则本次战斗 POWER +3。",
     tags: ["▲"],
     hooks: {
       modifyCombatPower: [
@@ -299,7 +299,7 @@ const UNIT_CATALOG = {
   "macrophage-command": defineUnit({
     name: "巨噬细胞-指挥",
     power: 4,
-    description: `▲：若本单位被选为攻击者，则令己方中 POWER 最低且没有任何 BUFF 的一个单位获得【${BUFF_CATALOG[ANTIBODY_BUFF].shortLabel}】。`
+    description: `▲：本单位主动攻击之前，令己方中 POWER 最低且没有任何 BUFF 的一个单位获得【${BUFF_CATALOG[ANTIBODY_BUFF].shortLabel}】。`
       + "电脑攻击目标为没有【标记】且没有【抗体】、并且 POWER 最低的另一个单位。"
       + "战斗前：目标 POWER 永久 -2，本单位 POWER 永久 +2。",
     tags: ["▲"],
@@ -338,7 +338,7 @@ const UNIT_CATALOG = {
   "gateway-b-cell": defineUnit({
     name: "调度B细胞-网关",
     power: 6,
-    description: `▲：若本单位被选为攻击者，则令己方中 POWER 最高且没有任何 BUFF 的一个单位获得【${BUFF_CATALOG[ANTIBODY_BUFF].shortLabel}】。`
+    description: `▲：本单位主动攻击之前，令己方中 POWER 最高且没有任何 BUFF 的一个单位获得【${BUFF_CATALOG[ANTIBODY_BUFF].shortLabel}】。`
       + "电脑攻击目标为没有【标记】且没有【抗体】、并且 POWER 最高的另一个单位。"
       + "本单位不直接战斗，而是令己方所有存活的“巡检单核体”“清理溶酶虫”依次攻击目标。"
       + "▼：行动结束后，复活己方所有已阵亡的“巡检单核体”“清理溶酶虫”“补体屏障”。",
@@ -418,7 +418,7 @@ const UNIT_CATALOG = {
   "cleaner-lysosome": defineUnit({
     name: "清理溶酶虫",
     power: 2,
-    description: "▲：若目标 POWER > 5，则目标 POWER -3；否则，直接摧毁目标。",
+    description: "▲：本单位主动攻击时，若目标 POWER > 5，则目标 POWER -3；否则，直接摧毁目标。",
     tags: ["▲"],
     hooks: {
       beforeCombat: [
@@ -454,7 +454,7 @@ const UNIT_CATALOG = {
   "complement-barrier": defineUnit({
     name: "补体屏障",
     power: 3,
-    description: "●※：本单位不可作为攻击者。若一个己方单位将因战斗被摧毁，且该单位当前 POWER 大于本单位，则改为该单位免于被摧毁，本单位自毁。",
+    description: "●※：本单位不可主动攻击。若一个己方单位将因战斗被摧毁，且该单位当前 POWER 大于本单位，则改为该单位免于被摧毁，本单位自毁。",
     tags: ["●", "※"],
     display: {
       playerCommandable: false,
@@ -488,7 +488,7 @@ const UNIT_CATALOG = {
   lantern: defineUnit({
     name: "灯笼",
     power: 2,
-    description: "●：若本单位作为被攻击者进入战斗，则不会因本次战斗被摧毁。▼：若本单位本次战斗中作为被攻击者，则战斗结束后与攻击者永久交换能力；该交换不改变目标原本的攻击目标索引逻辑。",
+    description: "●：若本单位作为被攻击者进入战斗，则不会因本次战斗被摧毁。▼：若本单位本次战斗中作为被攻击者，则战斗结束后与主动攻击者永久交换能力；该交换不改变目标原本的攻击目标索引逻辑。",
     tags: ["●", "▼"],
     hooks: {
       preventCombatDestruction: [
@@ -564,7 +564,7 @@ const UNIT_CATALOG = {
   "fever-module": defineUnit({
     name: "发热模块",
     power: 3,
-    description: "▲：若本单位作为攻击者进入战斗，则除本单位与目标外的所有单位 POWER +1。●：若本单位作为攻击者进入战斗，则不会因本次战斗被摧毁。",
+    description: "▲：本单位主动攻击时，则除本单位与目标外的所有单位 POWER +1。●：本单位主动攻击时，则不会因本次战斗被摧毁。",
     tags: ["▲", "●"],
     hooks: {
       beforeCombat: [
