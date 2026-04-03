@@ -1,12 +1,25 @@
 import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-
-const EMP_BUFF = "electromagnetic-interference";
+const {
+  getBuffDescriptions: modelGetBuffDescriptions,
+  getBuffShortLabels: modelGetBuffShortLabels,
+  getPowerDisplay: modelGetPowerDisplay,
+  buildCenterFeed: modelBuildCenterFeed,
+  buildDisplayBattle: modelBuildDisplayBattle,
+  getAbilityContextEntries: modelGetAbilityContextEntries,
+  getUnitDisplayMode: modelGetUnitDisplayMode,
+  isManualTargetable: modelIsManualTargetable,
+  isPlayerVisibleEnemy: modelIsPlayerVisibleEnemy,
+  isPlayerCommandable: modelIsPlayerCommandable,
+  canPlayerChooseTarget: modelCanPlayerChooseTarget,
+} = require("./engine/view-model");
+const { buildAssetUrl, resolveMusicTrack } = require("./data/music");
 
 const TAG_SYMBOLS = {
-  主: "◆",
-  被: "●",
-  中: "▲",
-  后: "▼",
+  "◆": "◆",
+  "▲": "▲",
+  "▼": "▼",
+  "●": "●",
+  "※": "※",
 };
 
 function hasHighlight(step, type, id) {
@@ -17,122 +30,21 @@ function findHighlightedUnit(step) {
   return step?.highlights?.find((item) => item.type === "unit")?.id || null;
 }
 
-function getBuffDescriptions(unit) {
-  const items = [];
-  if (unit?.buffs?.[EMP_BUFF] > 0) {
-    items.push("【EMP】POWER -3；被摧毁时传递给最后一次与之战斗的单位。");
-  }
-  return items;
-}
-
-function getPowerDisplay(unit, gameState) {
-  if (!unit) {
-    return { value: 0, suffix: "" };
-  }
-  const bonus = gameState?.battle?.combatPreview?.[unit.id]?.bonus || 0;
-  return {
-    value: unit.power,
-    suffix: bonus > 0 ? `+${bonus}` : "",
-  };
-}
-
-function summarizeEntry(entry) {
-  if (entry.type === "combat") {
-    return entry.text.replace(" 攻击 ", " → ");
-  }
-  if (entry.type === "enemy") {
-    return entry.text.replace(" 锁定 ", " → ");
-  }
-  return entry.text;
-}
-
-function buildCenterFeed(logs) {
-  return logs
-    .filter((entry) => ["combat", "enemy", "hook", "skill"].includes(entry.type))
-    .slice(-3)
-    .map((entry, index) => ({
-      key: `${entry.turn}-${entry.type}-${index}-${entry.text}`,
-      text: summarizeEntry(entry),
-      type: entry.type,
-    }));
-}
-
-function cloneValue(value) {
-  return JSON.parse(JSON.stringify(value));
-}
-
-function buildDisplayBattle(battle, enemyConfirm) {
-  if (!battle) {
-    return null;
-  }
-
-  if (!enemyConfirm?.key) {
-    return battle;
-  }
-
-  const displayBattle = cloneValue(battle);
-  const combatIndex = displayBattle.actionLog.findIndex(
-    (entry) =>
-      entry.type === "combat"
-      && entry.source === "enemy-open-strike"
-      && `${entry.turn}-${entry.attackerId}-${entry.defenderId}` === enemyConfirm.key
+function MusicPlayIcon() {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" className="music-icon" stroke="currentColor" strokeWidth="1.7">
+      <path d="M8 6.5v11l9-5.5-9-5.5Z" fill="currentColor" stroke="none" />
+    </svg>
   );
-
-  if (combatIndex < 0) {
-    return displayBattle;
-  }
-
-  const previousCombat = displayBattle.actionLog
-    .slice(0, combatIndex)
-    .filter((entry) => entry.type === "combat")
-    .slice(-1)[0] || null;
-
-  const hiddenDestroyedIds = new Set(
-    displayBattle.actionLog
-      .slice(combatIndex + 1)
-      .filter((entry) => entry.type === "destroy" && entry.unitId)
-      .map((entry) => entry.unitId)
-  );
-
-  [...displayBattle.playerUnits, ...displayBattle.enemyUnits].forEach((unit) => {
-    if (hiddenDestroyedIds.has(unit.id)) {
-      unit.alive = true;
-      unit.destroyedAtTurn = null;
-    }
-  });
-
-  displayBattle.lastCombatAttackerId = previousCombat?.attackerId || null;
-  displayBattle.lastCombatDefenderId = previousCombat?.defenderId || null;
-
-  return displayBattle;
 }
 
-function getAbilityContextLines(selectedUnit, battle) {
-  if (!selectedUnit || !battle) {
-    return [];
-  }
-
-  if (selectedUnit.code === "signal-bee") {
-    const previousAttacker = [...battle.playerUnits, ...battle.enemyUnits]
-      .find((unit) => unit.id === battle.lastCombatAttackerId);
-    return [
-      previousAttacker?.alive
-        ? `上一个攻击者：${previousAttacker.name}`
-        : "上一个攻击者：当前没有存活的对象",
-    ];
-  }
-
-  if (selectedUnit.code === "monitor-bee") {
-    const previousDefender = [...battle.playerUnits, ...battle.enemyUnits]
-      .find((unit) => unit.id === battle.lastCombatDefenderId);
-    return [
-      previousDefender?.alive
-        ? `上一个被攻击者：${previousDefender.name}`
-        : "上一个被攻击者：当前没有存活的对象",
-    ];
-  }
-
-  return [];
+function MusicPauseIcon() {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" className="music-icon" stroke="currentColor" strokeWidth="1.7">
+      <rect x="7" y="6" width="3.5" height="12" rx="1" fill="currentColor" stroke="none" />
+      <rect x="13.5" y="6" width="3.5" height="12" rx="1" fill="currentColor" stroke="none" />
+    </svg>
+  );
 }
 
 function useHideMusicPlayer() {
@@ -178,6 +90,138 @@ function useHideMusicPlayer() {
       });
     };
   }, []);
+}
+
+function useStageMusic(gameState) {
+  const audioRef = useRef(null);
+  const [enabled, setEnabled] = useState(true);
+  const [isPlaying, setIsPlaying] = useState(false);
+  const [notice, setNotice] = useState(null);
+  const track = useMemo(() => resolveMusicTrack(gameState), [gameState]);
+
+  useEffect(() => {
+    if (!notice) {
+      return undefined;
+    }
+    const timer = setTimeout(() => setNotice(null), 10000);
+    return () => clearTimeout(timer);
+  }, [notice]);
+
+  useEffect(() => {
+    const audio = audioRef.current;
+    if (!audio || !track) {
+      return undefined;
+    }
+
+    let cancelled = false;
+    audio.pause();
+    audio.currentTime = 0;
+    audio.src = buildAssetUrl(track.fileName);
+    audio.loop = true;
+    audio.preload = "auto";
+
+    const tryPlay = () => {
+      if (!enabled) {
+        audio.pause();
+        setIsPlaying(false);
+        return;
+      }
+
+      const playPromise = audio.play();
+      if (playPromise?.then) {
+        playPromise
+          .then(() => {
+            if (cancelled) {
+              return;
+            }
+            setIsPlaying(true);
+            setNotice(track);
+          })
+          .catch(() => {
+            if (cancelled) {
+              return;
+            }
+            setIsPlaying(false);
+          });
+      } else {
+        setIsPlaying(!audio.paused);
+        setNotice(track);
+      }
+    };
+
+    tryPlay();
+
+    const resumeOnGesture = () => {
+      if (audio.paused && enabled) {
+        tryPlay();
+      }
+    };
+
+    window.addEventListener("pointerdown", resumeOnGesture);
+    window.addEventListener("keydown", resumeOnGesture);
+
+    return () => {
+      cancelled = true;
+      audio.pause();
+      window.removeEventListener("pointerdown", resumeOnGesture);
+      window.removeEventListener("keydown", resumeOnGesture);
+    };
+  }, [track?.key, enabled]);
+
+  useEffect(() => {
+    const audio = audioRef.current;
+    if (!audio) {
+      return;
+    }
+    const sync = () => setIsPlaying(!audio.paused);
+    audio.addEventListener("play", sync);
+    audio.addEventListener("pause", sync);
+    return () => {
+      audio.removeEventListener("play", sync);
+      audio.removeEventListener("pause", sync);
+    };
+  }, []);
+
+  const toggle = () => {
+    const audio = audioRef.current;
+    if (!audio) {
+      return;
+    }
+    if (enabled && !audio.paused) {
+      audio.pause();
+      setEnabled(false);
+      setIsPlaying(false);
+      return;
+    }
+    setEnabled(true);
+    if (audio.src !== buildAssetUrl(track.fileName)) {
+      audio.src = buildAssetUrl(track.fileName);
+    }
+    const playPromise = audio.play();
+    if (playPromise?.then) {
+      playPromise
+        .then(() => {
+          setIsPlaying(true);
+          setNotice(track);
+        })
+        .catch(() => {
+          setIsPlaying(false);
+        });
+    } else {
+      setIsPlaying(true);
+      setNotice(track);
+    }
+  };
+
+  return {
+    audioRef,
+    enabled,
+    isPlaying,
+    notice,
+    setNotice,
+    track,
+    toggle,
+  };
 }
 
 function useBattleViewport(rootRef, enabled) {
@@ -234,7 +278,7 @@ function StoryView({ gameState, onAction }) {
   };
 
   return (
-    <div className="library-run-root">
+    <>
       <div className="story-shell" onClick={handleAdvance} role="button" tabIndex={0}>
         <div className="story-noise" />
         <div className="story-page">
@@ -251,8 +295,7 @@ function StoryView({ gameState, onAction }) {
           </div>
         </div>
       </div>
-      <StyleBlock />
-    </div>
+    </>
   );
 }
 
@@ -282,7 +325,11 @@ function GuideCard({ step, onNext }) {
         </button>
       ) : (
         <div className="guide-hint">
-          {step.mode === "attack" ? "请按提示选择攻击者与目标" : "请用右侧 CONFIRM 确认敌方回合"}
+          {step.mode === "attack"
+            ? "请按提示选择攻击者与目标"
+            : step.mode === "undo"
+              ? "请点击右上角 BACK 回到上一步"
+              : "请用右侧 CONFIRM 确认敌方回合"}
         </div>
       )}
     </div>
@@ -371,7 +418,7 @@ function ArrowLayer({ arrow }) {
 
   return (
     <svg
-      className={`battle-arrow ${arrow.hostile ? "hostile" : "friendly"}`}
+      className={`battle-arrow ${arrow.hostile ? "hostile" : "friendly"} ${arrow.dashed ? "dashed" : ""}`}
       viewBox="0 0 100 100"
       preserveAspectRatio="none"
     >
@@ -392,8 +439,8 @@ function ArrowLayer({ arrow }) {
 }
 
 function CellMeta({ unit, gameState }) {
-  const power = getPowerDisplay(unit, gameState);
-  const buffDescriptions = getBuffDescriptions(unit);
+  const power = modelGetPowerDisplay(unit, gameState);
+  const buffLabels = modelGetBuffShortLabels(unit);
 
   return (
     <div className="cell-meta">
@@ -410,11 +457,11 @@ function CellMeta({ unit, gameState }) {
           </span>
         ))}
       </div>
-      {buffDescriptions.length > 0 ? (
+      {buffLabels.length > 0 ? (
         <div className="unit-buffs">
-          {buffDescriptions.map((buff) => (
+          {buffLabels.map((buff) => (
             <span key={`${unit.id}-${buff}`} className="buff-chip">
-              【EMP】
+              {buff}
             </span>
           ))}
         </div>
@@ -432,6 +479,8 @@ function UnitCell({
   attackerSelected,
   targetReady,
   targetSelected,
+  friendlyAttacker,
+  friendlyDefender,
   hostileAttacker,
   hostileDefender,
   onClick,
@@ -441,7 +490,7 @@ function UnitCell({
   onCancelTarget,
   registerRef,
 }) {
-  const isDisguise = unit.code === "disguise-module";
+  const isDisguise = modelGetUnitDisplayMode(unit) === "split";
 
   const rootClassName = [
     "unit-cell",
@@ -451,6 +500,8 @@ function UnitCell({
     attackerSelected ? "attacker-selected" : "",
     targetReady ? "target-ready" : "",
     targetSelected ? "target-selected" : "",
+    friendlyAttacker ? "friendly-attacker" : "",
+    friendlyDefender ? "friendly-defender" : "",
     hostileAttacker ? "hostile-attacker" : "",
     hostileDefender ? "hostile-defender" : "",
     !unit.alive ? "dead" : "",
@@ -530,9 +581,9 @@ function SidePanel({
   setManifestValue,
   guideStep,
 }) {
-  const power = getPowerDisplay(selectedUnit, gameState);
-  const buffDescriptions = getBuffDescriptions(selectedUnit);
-  const abilityContextLines = getAbilityContextLines(selectedUnit, battle);
+  const power = modelGetPowerDisplay(selectedUnit, gameState);
+  const buffDescriptions = modelGetBuffDescriptions(selectedUnit);
+  const abilityContextEntries = modelGetAbilityContextEntries(selectedUnit, battle);
 
   return (
     <aside className="side-panel">
@@ -571,9 +622,10 @@ function SidePanel({
             <div className={`panel-copy ${hasHighlight(guideStep, "area", "panel-description") ? "guide-glow-inline" : ""}`}>
               {selectedUnit.description}
             </div>
-            {abilityContextLines.map((line) => (
-              <div key={line} className="panel-copy context-line">
-                {line}
+            {abilityContextEntries.map((entry) => (
+              <div key={`${entry.key}-${entry.value}`} className="panel-copy context-line">
+                <span className="context-key">{entry.key}</span>
+                <span>{entry.value}</span>
               </div>
             ))}
 
@@ -600,8 +652,9 @@ function SidePanel({
                       type="button"
                       className={`mini-button ${manifestValue === value ? "strong" : ""}`}
                       onClick={() => {
-                        setManifestValue(value);
-                        onSetManifest(value);
+                        const nextValue = manifestValue === value ? null : value;
+                        setManifestValue(nextValue);
+                        onSetManifest(nextValue);
                       }}
                     >
                       {value}
@@ -635,33 +688,41 @@ export default function LibraryRun1View({ gameState, onAction }) {
   const rootRef = useRef(null);
   const stageRef = useRef(null);
   const nodeRefs = useRef({});
-  const seenEnemyCombatKeyRef = useRef(null);
 
   const [selectedAttackerId, setSelectedAttackerId] = useState(null);
   const [selectedTargetId, setSelectedTargetId] = useState(null);
   const [inspectId, setInspectId] = useState(null);
   const [showLog, setShowLog] = useState(false);
   const [showRules, setShowRules] = useState(false);
-  const [enemyConfirm, setEnemyConfirm] = useState(null);
-  const [manifestValue, setManifestValue] = useState(5);
+  const [manifestValue, setManifestValue] = useState(null);
   const [arrow, setArrow] = useState(null);
 
   useHideMusicPlayer();
   useBattleViewport(rootRef, gameState?.phase !== "STORY");
+  const music = useStageMusic(gameState);
+  const isStoryPhase = gameState?.phase === "STORY";
 
   const battle = gameState?.battle || null;
-  const displayBattle = useMemo(() => buildDisplayBattle(battle, enemyConfirm), [battle, enemyConfirm]);
+  const enemyConfirm = battle?.pendingEnemyAction || null;
+  const displayBattle = useMemo(() => modelBuildDisplayBattle(battle, enemyConfirm), [battle, enemyConfirm]);
   const guideStep = battle?.currentGuideStep || null;
 
-  const playerUnits = useMemo(
-    () => (displayBattle ? [...displayBattle.playerUnits].sort((a, b) => a.slot - b.slot) : []),
+  const allUnits = useMemo(
+    () => (displayBattle ? [...displayBattle.playerUnits, ...displayBattle.enemyUnits] : []),
     [displayBattle]
+  );
+  const playerUnits = useMemo(
+    () => allUnits
+      .filter((unit) => (unit.baseSide ?? unit.side) === "player")
+      .sort((a, b) => a.slot - b.slot),
+    [allUnits]
   );
   const enemyUnits = useMemo(
-    () => (displayBattle ? [...displayBattle.enemyUnits].sort((a, b) => a.slot - b.slot) : []),
-    [displayBattle]
+    () => allUnits
+      .filter((unit) => (unit.baseSide ?? unit.side) === "enemy")
+      .sort((a, b) => a.slot - b.slot),
+    [allUnits]
   );
-  const allUnits = useMemo(() => [...playerUnits, ...enemyUnits], [playerUnits, enemyUnits]);
 
   const selectedAttacker = allUnits.find((unit) => unit.id === selectedAttackerId) || null;
   const selectedTarget = allUnits.find((unit) => unit.id === selectedTargetId) || null;
@@ -671,7 +732,7 @@ export default function LibraryRun1View({ gameState, onAction }) {
     || enemyUnits.find((unit) => unit.alive)
     || null;
 
-  const centerFeed = useMemo(() => buildCenterFeed(battle?.actionLog || []), [battle?.actionLog]);
+  const centerFeed = useMemo(() => modelBuildCenterFeed(battle?.actionLog || []), [battle?.actionLog]);
 
   useEffect(() => {
     if (!battle) {
@@ -684,10 +745,12 @@ export default function LibraryRun1View({ gameState, onAction }) {
     setSelectedAttackerId(defaultUnit?.side === "player" ? defaultUnit.id : null);
     setSelectedTargetId(null);
     setInspectId(defaultUnit?.id || null);
-    setEnemyConfirm(null);
     setArrow(null);
-    seenEnemyCombatKeyRef.current = null;
   }, [battle?.stageId]);
+
+  useEffect(() => {
+    setManifestValue(battle?.pendingTurnEffects?.overloadPower ?? null);
+  }, [battle?.pendingTurnEffects?.overloadPower]);
 
   useEffect(() => {
     const highlightedId = findHighlightedUnit(guideStep);
@@ -697,46 +760,10 @@ export default function LibraryRun1View({ gameState, onAction }) {
   }, [guideStep]);
 
   useEffect(() => {
-    if (!battle) {
-      return;
+    if (enemyConfirm?.defenderId) {
+      setInspectId(enemyConfirm.defenderId);
     }
-    const latestEnemyCombat = [...(battle.actionLog || [])]
-      .reverse()
-      .find((entry) => entry.type === "combat" && entry.source === "enemy-open-strike");
-
-    if (!latestEnemyCombat) {
-      setEnemyConfirm(null);
-      setArrow(null);
-      setSelectedTargetId(null);
-      seenEnemyCombatKeyRef.current = null;
-      return;
-    }
-
-    const key = `${latestEnemyCombat.turn}-${latestEnemyCombat.attackerId}-${latestEnemyCombat.defenderId}`;
-    if (enemyConfirm?.key && enemyConfirm.key !== key) {
-      if (seenEnemyCombatKeyRef.current === key) {
-        setEnemyConfirm(null);
-        setArrow(null);
-        setSelectedTargetId(null);
-        return;
-      }
-    }
-
-    if (enemyConfirm?.key === key) {
-      return;
-    }
-
-    if (seenEnemyCombatKeyRef.current === key) {
-      return;
-    }
-
-    setEnemyConfirm({
-      key,
-      attackerId: latestEnemyCombat.attackerId,
-      defenderId: latestEnemyCombat.defenderId,
-    });
-    setInspectId(latestEnemyCombat.defenderId);
-  }, [battle?.actionLog, battle, enemyConfirm?.key]);
+  }, [enemyConfirm?.defenderId]);
 
   useEffect(() => {
     const sourceId = enemyConfirm?.attackerId || selectedAttackerId;
@@ -792,9 +819,19 @@ export default function LibraryRun1View({ gameState, onAction }) {
       y1,
       x2,
       y2,
-      hostile: !!enemyConfirm?.attackerId,
+      hostile: enemyConfirm ? enemyConfirm.controllerSide === "enemy" : false,
+      dashed: !!enemyConfirm?.dashed,
     });
   }, [selectedAttackerId, selectedTargetId, enemyConfirm, battle?.actionLog]);
+
+  useEffect(() => {
+    if (!selectedTarget || enemyConfirm) {
+      return;
+    }
+    if (!isTargetCandidate(selectedTarget)) {
+      setSelectedTargetId(null);
+    }
+  }, [selectedTargetId, selectedAttackerId, enemyConfirm, displayBattle]);
 
   if (!gameState) {
     return (
@@ -804,17 +841,36 @@ export default function LibraryRun1View({ gameState, onAction }) {
     );
   }
 
-  if (gameState.phase === "STORY") {
-    return <StoryView gameState={gameState} onAction={onAction} />;
-  }
-
   const canAttack = !!(
     selectedAttacker
     && selectedTarget
+    && modelIsPlayerVisibleEnemy(selectedTarget)
+    && modelIsManualTargetable(selectedTarget)
     && selectedAttacker.alive
     && selectedTarget.alive
     && battle?.status === "PLAYER_TURN"
     && !enemyConfirm
+  );
+
+  const confirmControllerSide = enemyConfirm?.controllerSide || null;
+  const confirmAttackerId = enemyConfirm?.attackerId || null;
+  const confirmDefenderId = enemyConfirm?.defenderId || null;
+
+  const isAttackerCandidate = (unit) => !!(
+    unit
+    && unit.alive
+    && modelIsPlayerCommandable(unit)
+    && !enemyConfirm
+  );
+
+  const isTargetCandidate = (unit, attacker = selectedAttacker) => !!(
+    attacker
+    && attacker.alive
+    && unit
+    && unit.alive
+    && !enemyConfirm
+    && modelIsManualTargetable(unit)
+    && modelCanPlayerChooseTarget(attacker, unit)
   );
 
   const registerNode = (id) => (node) => {
@@ -825,7 +881,7 @@ export default function LibraryRun1View({ gameState, onAction }) {
 
   const selectAttacker = (unit) => {
     setInspectId(unit.id);
-    if (!unit.alive || enemyConfirm) {
+    if (!isAttackerCandidate(unit)) {
       return;
     }
     setSelectedAttackerId(unit.id);
@@ -836,10 +892,24 @@ export default function LibraryRun1View({ gameState, onAction }) {
 
   const selectTarget = (unit) => {
     setInspectId(unit.id);
-    if (!unit.alive || enemyConfirm || !selectedAttacker || selectedAttacker.id === unit.id) {
+    if (!isTargetCandidate(unit)) {
       return;
     }
     setSelectedTargetId(unit.id);
+  };
+
+  const selectEnemyRowUnit = (unit) => {
+    setInspectId(unit.id);
+    if (isAttackerCandidate(unit) && (!selectedAttacker || selectedAttacker.id !== unit.id)) {
+      setSelectedAttackerId(unit.id);
+      if (selectedTargetId === unit.id) {
+        setSelectedTargetId(null);
+      }
+      return;
+    }
+    if (isTargetCandidate(unit)) {
+      setSelectedTargetId(unit.id);
+    }
   };
 
   const handleAttack = () => {
@@ -854,9 +924,7 @@ export default function LibraryRun1View({ gameState, onAction }) {
   };
 
   const handleConfirmEnemy = () => {
-    seenEnemyCombatKeyRef.current = enemyConfirm?.key || seenEnemyCombatKeyRef.current;
     onAction("confirm-enemy", {});
-    setEnemyConfirm(null);
     setSelectedTargetId(null);
     setArrow(null);
   };
@@ -864,96 +932,88 @@ export default function LibraryRun1View({ gameState, onAction }) {
   const handleBack = () => {
     if (guideStep?.mode === "undo") {
       onAction("guide-undo", {});
-      setEnemyConfirm(null);
       setSelectedTargetId(null);
       setArrow(null);
-      seenEnemyCombatKeyRef.current = null;
       return;
     }
+    setSelectedTargetId(null);
+    setArrow(null);
     onAction("undo", {});
   };
 
   return (
     <div className="library-run-root" ref={rootRef}>
+      <audio ref={music.audioRef} hidden />
       <div className="battle-toolbar">
+        {!isStoryPhase ? (
+          <>
+            <button
+              type="button"
+              className={`mini-button ${hasHighlight(guideStep, "area", "toolbar-back") ? "guide-glow" : ""}`}
+              onClick={handleBack}
+            >
+              BACK
+            </button>
+            <button
+              type="button"
+              className={`mini-button ${hasHighlight(guideStep, "area", "toolbar-rules") ? "guide-glow" : ""}`}
+              onClick={() => setShowRules(true)}
+            >
+              RULES
+            </button>
+            <button
+              type="button"
+              className={`mini-button ${hasHighlight(guideStep, "area", "toolbar-log") ? "guide-glow" : ""}`}
+              onClick={() => setShowLog(true)}
+            >
+              LOG
+            </button>
+          </>
+        ) : null}
         <button
           type="button"
-          className={`mini-button ${hasHighlight(guideStep, "area", "toolbar-back") ? "guide-glow" : ""}`}
-          onClick={handleBack}
+          className={`mini-button music-button ${music.isPlaying ? "strong" : ""}`}
+          onClick={music.toggle}
+          title={music.track ? `${music.track.source} / ${music.track.title}` : "BGM"}
         >
-          BACK
-        </button>
-        <button
-          type="button"
-          className={`mini-button ${hasHighlight(guideStep, "area", "toolbar-rules") ? "guide-glow" : ""}`}
-          onClick={() => setShowRules(true)}
-        >
-          RULES
-        </button>
-        <button
-          type="button"
-          className={`mini-button ${hasHighlight(guideStep, "area", "toolbar-log") ? "guide-glow" : ""}`}
-          onClick={() => setShowLog(true)}
-        >
-          LOG
+          {music.isPlaying ? <MusicPauseIcon /> : <MusicPlayIcon />}
         </button>
       </div>
 
-      <div className="battle-shell">
-        <div className="battle-layout">
-          <section className="stage-board" ref={stageRef}>
-            <ArrowLayer arrow={arrow} />
-            <div className={`row enemy-row ${hasHighlight(guideStep, "area", "enemy-row") ? "guide-glow" : ""}`}>
-              {enemyUnits.map((unit) => (
-                <UnitCell
-                  key={unit.id}
-                  unit={unit}
-                  gameState={gameState}
-                  inspected={inspectId === unit.id}
-                  guideGlow={hasHighlight(guideStep, "unit", unit.id) || hasHighlight(guideStep, "area", "power-readout")}
-                  attackerReady={false}
-                  attackerSelected={false}
-                  targetReady={!enemyConfirm && !!selectedAttacker && unit.alive}
-                  targetSelected={selectedTargetId === unit.id}
-                  hostileAttacker={enemyConfirm?.attackerId === unit.id}
-                  hostileDefender={false}
-                  onClick={() => selectTarget(unit)}
-                  onCancelAttacker={null}
-                  onCancelTarget={selectedTargetId === unit.id ? () => setSelectedTargetId(null) : null}
-                  registerRef={registerNode(unit.id)}
-                />
-              ))}
-            </div>
+      {music.notice ? (
+        <button type="button" className="music-notice fade-in" onClick={() => music.setNotice(null)}>
+          <div className="music-notice-kicker">NOW PLAYING</div>
+          <div className="music-notice-title">{music.notice.title}</div>
+          <div className="music-notice-copy">借用来源：{music.notice.source}</div>
+          <div className="music-notice-copy">音频名称：{music.notice.title}</div>
+          <div className="music-notice-copy">作者：{music.notice.credit}</div>
+        </button>
+      ) : null}
 
-            <div className={`stage-middle ${hasHighlight(guideStep, "area", "center-feed") ? "guide-glow" : ""}`}>
-              <div className="center-feed">
-                {centerFeed.map((item) => (
-                  <div key={item.key} className={`feed-line ${item.type}`}>
-                    {item.text}
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            <div className={`row player-row ${hasHighlight(guideStep, "area", "player-row") ? "guide-glow" : ""}`}>
-              {playerUnits.map((unit) => {
-                const isDisguise = unit.code === "disguise-module";
-                return (
+      {isStoryPhase ? (
+        <StoryView gameState={gameState} onAction={onAction} />
+      ) : (
+        <div className="battle-shell">
+          <div className="battle-layout">
+            <section className="stage-board" ref={stageRef}>
+              <ArrowLayer arrow={arrow} />
+              <div className={`row enemy-row ${hasHighlight(guideStep, "area", "enemy-row") ? "guide-glow" : ""}`}>
+                {enemyUnits.map((unit) => (
                   <UnitCell
                     key={unit.id}
                     unit={unit}
                     gameState={gameState}
                     inspected={inspectId === unit.id}
                     guideGlow={hasHighlight(guideStep, "unit", unit.id) || hasHighlight(guideStep, "area", "power-readout")}
-                    attackerReady={unit.alive && !enemyConfirm}
+                    attackerReady={isAttackerCandidate(unit)}
                     attackerSelected={selectedAttackerId === unit.id}
-                    targetReady={isDisguise && !!selectedAttacker && selectedAttacker.id !== unit.id && unit.alive && !enemyConfirm}
+                    targetReady={isTargetCandidate(unit)}
                     targetSelected={selectedTargetId === unit.id}
-                    hostileAttacker={false}
-                    hostileDefender={enemyConfirm?.defenderId === unit.id}
-                    onClick={() => selectAttacker(unit)}
-                    onTopClick={isDisguise ? () => selectTarget(unit) : null}
-                    onBottomClick={isDisguise ? () => selectAttacker(unit) : null}
+                    friendlyAttacker={confirmAttackerId === unit.id && confirmControllerSide === "player"}
+                    friendlyDefender={confirmDefenderId === unit.id && confirmControllerSide === "enemy"}
+                    hostileAttacker={confirmAttackerId === unit.id && confirmControllerSide === "enemy"}
+                    hostileDefender={confirmDefenderId === unit.id && confirmControllerSide === "player"}
+                    onClick={() => selectEnemyRowUnit(unit)}
                     onCancelAttacker={selectedAttackerId === unit.id ? () => {
                       setSelectedAttackerId(null);
                       setSelectedTargetId(null);
@@ -961,39 +1021,81 @@ export default function LibraryRun1View({ gameState, onAction }) {
                     onCancelTarget={selectedTargetId === unit.id ? () => setSelectedTargetId(null) : null}
                     registerRef={registerNode(unit.id)}
                   />
-                );
-              })}
-            </div>
+                ))}
+              </div>
 
-            <GuideCard step={guideStep} onNext={() => onAction("next-guide", {})} />
-          </section>
+              <div className={`stage-middle ${hasHighlight(guideStep, "area", "center-feed") ? "guide-glow" : ""}`}>
+                <div className="center-feed">
+                  {centerFeed.map((item) => (
+                    <div key={item.key} className={`feed-line ${item.type}`}>
+                      {item.text}
+                    </div>
+                  ))}
+                </div>
+              </div>
 
-          <SidePanel
-            battle={displayBattle}
-            selectedUnit={inspectedUnit}
-            gameState={gameState}
-            enemyConfirm={enemyConfirm}
-            canAttack={canAttack}
-            onAttack={handleAttack}
-            onConfirmEnemy={handleConfirmEnemy}
-            onSetManifest={(value) => onAction("set-overload", { power: value })}
-            manifestValue={manifestValue}
-            setManifestValue={setManifestValue}
-            guideStep={guideStep}
-          />
+              <div className={`row player-row ${hasHighlight(guideStep, "area", "player-row") ? "guide-glow" : ""}`}>
+                {playerUnits.map((unit) => {
+                  const isDisguise = modelGetUnitDisplayMode(unit) === "split";
+                  return (
+                    <UnitCell
+                      key={unit.id}
+                      unit={unit}
+                      gameState={gameState}
+                      inspected={inspectId === unit.id}
+                      guideGlow={hasHighlight(guideStep, "unit", unit.id) || hasHighlight(guideStep, "area", "power-readout")}
+                      attackerReady={isAttackerCandidate(unit)}
+                      attackerSelected={selectedAttackerId === unit.id}
+                      targetReady={isDisguise && isTargetCandidate(unit)}
+                      targetSelected={selectedTargetId === unit.id}
+                      friendlyAttacker={confirmAttackerId === unit.id && confirmControllerSide === "player"}
+                      friendlyDefender={confirmDefenderId === unit.id && confirmControllerSide === "enemy"}
+                      hostileAttacker={confirmAttackerId === unit.id && confirmControllerSide === "enemy"}
+                      hostileDefender={confirmDefenderId === unit.id && confirmControllerSide === "player"}
+                      onClick={() => selectAttacker(unit)}
+                      onTopClick={isDisguise ? () => selectTarget(unit) : null}
+                      onBottomClick={isDisguise ? () => selectAttacker(unit) : null}
+                      onCancelAttacker={selectedAttackerId === unit.id ? () => {
+                        setSelectedAttackerId(null);
+                        setSelectedTargetId(null);
+                      } : null}
+                      onCancelTarget={selectedTargetId === unit.id ? () => setSelectedTargetId(null) : null}
+                      registerRef={registerNode(unit.id)}
+                    />
+                  );
+                })}
+              </div>
+
+              <GuideCard step={guideStep} onNext={() => onAction("next-guide", {})} />
+            </section>
+
+            <SidePanel
+              battle={displayBattle}
+              selectedUnit={inspectedUnit}
+              gameState={gameState}
+              enemyConfirm={enemyConfirm}
+              canAttack={canAttack}
+              onAttack={handleAttack}
+              onConfirmEnemy={handleConfirmEnemy}
+              onSetManifest={(value) => onAction("set-overload", { power: value })}
+              manifestValue={manifestValue}
+              setManifestValue={setManifestValue}
+              guideStep={guideStep}
+            />
+          </div>
         </div>
-      </div>
+      )}
 
-      {showLog ? <LogOverlay battle={battle} onClose={() => setShowLog(false)} /> : null}
-      {showRules ? <RulesOverlay rules={gameState.rulebook} onClose={() => setShowRules(false)} /> : null}
-      {gameState.pendingDefeat ? (
+      {!isStoryPhase && showLog ? <LogOverlay battle={battle} onClose={() => setShowLog(false)} /> : null}
+      {!isStoryPhase && showRules ? <RulesOverlay rules={gameState.rulebook} onClose={() => setShowRules(false)} /> : null}
+      {!isStoryPhase && gameState.pendingDefeat ? (
         <FailureOverlay
           reason={gameState.pendingDefeat.reason}
           onUndo={() => onAction("undo", {})}
           onGiveUp={() => onAction("give-up", {})}
         />
       ) : null}
-      {gameState.finalResults ? <ResultOverlay finalResults={gameState.finalResults} /> : null}
+      {!isStoryPhase && gameState.finalResults ? <ResultOverlay finalResults={gameState.finalResults} /> : null}
       <StyleBlock />
     </div>
   );
@@ -1094,6 +1196,57 @@ function StyleBlock() {
         gap: 0.45rem;
       }
 
+      .music-button {
+        min-width: 2.55rem;
+        width: 2.55rem;
+        height: 2.55rem;
+        padding: 0;
+      }
+
+      .music-icon {
+        width: 1.05rem;
+        height: 1.05rem;
+      }
+
+      .music-notice {
+        position: absolute;
+        top: 1rem;
+        left: 50%;
+        z-index: 18;
+        transform: translateX(-50%);
+        width: min(460px, calc(100% - 2rem));
+        padding: 0.85rem 1rem;
+        border-radius: 20px;
+        border: 1px solid rgba(134, 231, 255, 0.34);
+        background: linear-gradient(180deg, rgba(5, 18, 41, 0.95), rgba(8, 25, 55, 0.92));
+        box-shadow:
+          0 18px 40px rgba(0, 0, 0, 0.35),
+          0 0 32px rgba(73, 194, 255, 0.18);
+        text-align: center;
+        cursor: pointer;
+        appearance: none;
+        outline: none;
+      }
+
+      .music-notice-kicker {
+        font-size: 0.68rem;
+        letter-spacing: 0.22em;
+        color: rgba(143, 228, 255, 0.72);
+      }
+
+      .music-notice-title {
+        margin-top: 0.25rem;
+        font-size: 1rem;
+        font-weight: 700;
+        color: rgba(240, 250, 255, 0.98);
+      }
+
+      .music-notice-copy {
+        margin-top: 0.18rem;
+        font-size: 0.76rem;
+        color: rgba(214, 241, 255, 0.82);
+      }
+
       .battle-shell {
         flex: 1 1 auto;
         min-height: 0;
@@ -1179,6 +1332,10 @@ function StyleBlock() {
         filter: drop-shadow(0 0 12px currentColor);
       }
 
+      .battle-arrow.dashed line {
+        stroke-dasharray: 6 5;
+      }
+
       .battle-arrow.friendly {
         color: rgba(109, 232, 255, 0.96);
       }
@@ -1237,8 +1394,12 @@ function StyleBlock() {
           0 18px 40px rgba(0, 0, 0, 0.32),
           0 0 42px rgba(72, 187, 255, 0.18);
         background:
-          linear-gradient(180deg, rgba(7, 20, 45, 0.94), rgba(4, 14, 33, 0.92));
-        backdrop-filter: blur(18px);
+          linear-gradient(180deg, rgba(8, 22, 48, 0.985), rgba(5, 16, 36, 0.975));
+        -webkit-backdrop-filter: none;
+        backdrop-filter: none;
+        text-rendering: optimizeLegibility;
+        -webkit-font-smoothing: antialiased;
+        -moz-osx-font-smoothing: grayscale;
       }
 
       .guide-card.side {
@@ -1253,6 +1414,7 @@ function StyleBlock() {
         font-size: 0.72rem;
         letter-spacing: 0.18em;
         color: rgba(136, 226, 255, 0.7);
+        text-rendering: geometricPrecision;
       }
 
       .guide-text {
@@ -1260,12 +1422,14 @@ function StyleBlock() {
         font-size: 0.82rem;
         line-height: 1.72;
         color: rgba(231, 248, 255, 0.92);
+        text-rendering: geometricPrecision;
       }
 
       .guide-hint {
         margin-top: 0.55rem;
         font-size: 0.72rem;
         color: rgba(153, 228, 255, 0.68);
+        text-rendering: geometricPrecision;
       }
 
       .guide-callouts {
@@ -1283,6 +1447,7 @@ function StyleBlock() {
         color: rgba(227, 247, 255, 0.92);
         font-size: 0.74rem;
         line-height: 1.5;
+        text-rendering: geometricPrecision;
       }
 
       .unit-cell {
@@ -1340,16 +1505,18 @@ function StyleBlock() {
         box-shadow: 0 0 26px rgba(255, 137, 76, 0.28);
       }
 
-      .unit-cell.hostile-attacker .unit-shell {
-        border-color: rgba(255, 172, 118, 0.82);
-        background: rgba(102, 42, 12, 0.96);
-        box-shadow: 0 0 26px rgba(255, 137, 76, 0.28);
-      }
-
-      .unit-cell.hostile-defender .unit-shell {
+      .unit-cell.friendly-attacker .unit-shell,
+      .unit-cell.friendly-defender .unit-shell {
         border-color: rgba(120, 228, 255, 0.82);
         background: rgba(0, 67, 110, 0.96);
         box-shadow: 0 0 26px rgba(67, 196, 255, 0.28);
+      }
+
+      .unit-cell.hostile-attacker .unit-shell,
+      .unit-cell.hostile-defender .unit-shell {
+        border-color: rgba(255, 172, 118, 0.82);
+        background: rgba(102, 42, 12, 0.96);
+        box-shadow: 0 0 26px rgba(255, 137, 76, 0.28);
       }
 
       .unit-button {
@@ -1404,9 +1571,18 @@ function StyleBlock() {
         background: linear-gradient(180deg, rgba(0, 62, 105, 0.97), rgba(0, 90, 139, 0.94));
       }
 
+      .disguise-cell.friendly-attacker .segment-button.bottom,
+      .disguise-cell.friendly-attacker .segment-button.top,
+      .disguise-cell.friendly-defender .segment-button.bottom,
+      .disguise-cell.friendly-defender .segment-button.top {
+        box-shadow: inset 0 0 0 1px rgba(118, 230, 255, 0.82), inset 0 0 26px rgba(67, 189, 255, 0.24);
+      }
+
+      .disguise-cell.hostile-attacker .segment-button.bottom,
+      .disguise-cell.hostile-attacker .segment-button.top,
       .disguise-cell.hostile-defender .segment-button.bottom,
       .disguise-cell.hostile-defender .segment-button.top {
-        box-shadow: inset 0 0 0 1px rgba(118, 230, 255, 0.82), inset 0 0 26px rgba(67, 189, 255, 0.24);
+        box-shadow: inset 0 0 0 1px rgba(255, 178, 118, 0.82), inset 0 0 26px rgba(255, 133, 79, 0.24);
       }
 
       .cell-meta {
@@ -1527,8 +1703,8 @@ function StyleBlock() {
       .side-panel {
         min-height: 0;
         height: 100%;
-        display: flex;
-        flex-direction: column;
+        display: grid;
+        grid-template-rows: minmax(0, 4fr) minmax(0, 6fr) auto;
         gap: 0.78rem;
       }
 
@@ -1542,12 +1718,17 @@ function StyleBlock() {
 
       .script-card {
         border-color: rgba(255, 158, 110, 0.18);
+        min-height: 0;
+        display: flex;
+        flex-direction: column;
+        overflow: hidden;
       }
 
       .detail-card {
-        flex: 1 1 auto;
         min-height: 0;
         overflow: auto;
+        scrollbar-width: thin;
+        scrollbar-color: rgba(118, 215, 255, 0.78) rgba(10, 26, 52, 0.34);
       }
 
       .panel-kicker {
@@ -1584,11 +1765,19 @@ function StyleBlock() {
       }
 
       .panel-copy.context-line {
+        display: flex;
+        gap: 0.45rem;
+        align-items: baseline;
         padding: 0.28rem 0.46rem;
         border-radius: 14px;
         border: 1px solid rgba(136, 228, 255, 0.2);
         background: rgba(19, 49, 86, 0.28);
         color: rgba(231, 248, 255, 0.9);
+      }
+
+      .context-key {
+        color: rgba(150, 227, 255, 0.66);
+        white-space: nowrap;
       }
 
       .panel-copy.mono {
@@ -1598,6 +1787,53 @@ function StyleBlock() {
 
       .script-lines {
         margin-top: 0.2rem;
+        min-height: 0;
+        overflow: auto;
+        scrollbar-width: thin;
+        scrollbar-color: rgba(255, 170, 123, 0.84) rgba(40, 18, 16, 0.3);
+      }
+
+      .detail-card::-webkit-scrollbar,
+      .script-lines::-webkit-scrollbar {
+        width: 8px;
+      }
+
+      .detail-card::-webkit-scrollbar-track,
+      .script-lines::-webkit-scrollbar-track {
+        border-radius: 999px;
+        background: rgba(6, 20, 42, 0.18);
+        box-shadow: inset 0 0 0 1px rgba(134, 220, 255, 0.08);
+      }
+
+      .detail-card::-webkit-scrollbar-thumb,
+      .script-lines::-webkit-scrollbar-thumb {
+        border-radius: 999px;
+        border: 1px solid rgba(5, 16, 36, 0.68);
+        background-clip: padding-box;
+        transition: background 160ms ease, border-color 160ms ease, box-shadow 160ms ease;
+      }
+
+      .detail-card::-webkit-scrollbar-thumb {
+        background: linear-gradient(180deg, rgba(132, 226, 255, 0.92), rgba(58, 146, 255, 0.74));
+        box-shadow: 0 0 10px rgba(66, 181, 255, 0.2);
+      }
+
+      .script-lines::-webkit-scrollbar-thumb {
+        background: linear-gradient(180deg, rgba(255, 188, 142, 0.94), rgba(255, 124, 84, 0.72));
+        box-shadow: 0 0 10px rgba(255, 142, 101, 0.18);
+      }
+
+      .detail-card:hover::-webkit-scrollbar-thumb {
+        background: linear-gradient(180deg, rgba(155, 235, 255, 0.96), rgba(76, 171, 255, 0.82));
+      }
+
+      .script-lines:hover::-webkit-scrollbar-thumb {
+        background: linear-gradient(180deg, rgba(255, 203, 165, 0.96), rgba(255, 145, 96, 0.8));
+      }
+
+      .detail-card::-webkit-scrollbar-corner,
+      .script-lines::-webkit-scrollbar-corner {
+        background: transparent;
       }
 
       .detail-head {
@@ -1770,6 +2006,8 @@ function StyleBlock() {
 
         .side-panel {
           height: auto;
+          display: flex;
+          flex-direction: column;
         }
 
         .guide-card {

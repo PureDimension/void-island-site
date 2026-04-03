@@ -1,8 +1,0 @@
-{
-  "id": "LibraryRun1",
-  "name": "图书馆之旅前传",
-  "version": "0.1.0",
-  "minPlayers": 1,
-  "maxPlayers": 1,
-  "description": "单人策略关卡试玩版。\n当前版本包含：\n1) 第一关关前剧情（3次跳转）\n2) 第一关战斗后端规则与前端操作面板\n\n目标：击败 IO 区全部敌方单位（含密文）。"
-}

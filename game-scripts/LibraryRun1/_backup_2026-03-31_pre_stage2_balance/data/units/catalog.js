@@ -30,57 +30,6 @@ const STANDARD_DISPLAY = {
   excludedFromEnemyAutoTarget: false,
 };
 
-function buildStage2TargetPool(runtime, state, self) {
-  return runtime.getAllUnits(state.battle)
-    .filter((unit) => unit.id !== self.id)
-    .filter((unit) => unit.alive)
-    .filter((unit) => runtime.canUnitBeTargetedBy(self, unit));
-}
-
-function macrophageManualTargetRule(runtime, state, { self, target }) {
-  const receiver = runtime.pickByPower(
-    runtime.getFriendlySupportUnits(state, self).filter((unit) => !runtime.hasAnyBuff(unit)),
-    "lowest",
-    self
-  );
-  const expectedTarget = runtime.pickByPower(
-    buildStage2TargetPool(runtime, state, self).filter(
-      (unit) => unit.id !== receiver?.id
-        && !runtime.hasBuff(unit, ANTIBODY_BUFF)
-        && !runtime.hasBuff(unit, MARK_BUFF)
-    ),
-    "lowest",
-    self
-  );
-  return expectedTarget?.id === target?.id;
-}
-
-function gatewayManualTargetRule(runtime, state, { self, target }) {
-  const receiver = runtime.pickByPower(
-    runtime.getFriendlySupportUnits(state, self).filter((unit) => !runtime.hasAnyBuff(unit)),
-    "highest",
-    self
-  );
-  const expectedTarget = runtime.pickByPower(
-    buildStage2TargetPool(runtime, state, self).filter(
-      (unit) => unit.id !== receiver?.id
-        && !runtime.hasBuff(unit, ANTIBODY_BUFF)
-        && !runtime.hasBuff(unit, MARK_BUFF)
-    ),
-    "highest",
-    self
-  );
-  return expectedTarget?.id === target?.id;
-}
-
-function killerManualTargetRule(runtime, state, { self, target }) {
-  const expectedTarget = runtime.pickByPriority(
-    buildStage2TargetPool(runtime, state, self).filter((unit) => runtime.hasBuff(unit, MARK_BUFF)),
-    self
-  );
-  return expectedTarget?.id === target?.id;
-}
-
 function mergeHooks(hooks = {}) {
   return {
     beforeCombat: hooks.beforeCombat || [],
@@ -103,7 +52,6 @@ function defineUnit(config) {
       ...(config.viewHooks || {}),
       inspectorEntries: config.viewHooks?.inspectorEntries || [],
     },
-    manualTargetRule: config.manualTargetRule || null,
     runtimeState: config.runtimeState || {},
   };
 }
@@ -352,10 +300,9 @@ const UNIT_CATALOG = {
     name: "巨噬细胞-指挥",
     power: 4,
     description: `▲：本单位主动攻击之前，令己方中 POWER 最低且没有任何 BUFF 的一个单位获得【${BUFF_CATALOG[ANTIBODY_BUFF].shortLabel}】。`
-      + "攻击目标固定为没有【标记】且没有【抗体】、并且 POWER 最低的另一个单位。"
+      + "电脑攻击目标为没有【标记】且没有【抗体】、并且 POWER 最低的另一个单位。"
       + "战斗前：目标 POWER 永久 -2，本单位 POWER 永久 +2。",
     tags: ["▲"],
-    manualTargetRule: macrophageManualTargetRule,
     hooks: {
       beforeCombat: [
         (runtime, state, { self, attacker, defender, controllerSide }) => {
@@ -392,11 +339,10 @@ const UNIT_CATALOG = {
     name: "调度B细胞-网关",
     power: 6,
     description: `▲：本单位主动攻击之前，令己方中 POWER 最高且没有任何 BUFF 的一个单位获得【${BUFF_CATALOG[ANTIBODY_BUFF].shortLabel}】。`
-      + "攻击目标固定为没有【标记】且没有【抗体】、并且 POWER 最高的另一个单位。"
+      + "电脑攻击目标为没有【标记】且没有【抗体】、并且 POWER 最高的另一个单位。"
       + "本单位不直接战斗，而是令己方所有存活的“巡检单核体”“清理溶酶虫”依次攻击目标。"
       + "▼：行动结束后，复活己方所有已阵亡的“巡检单核体”“清理溶酶虫”“补体屏障”。",
     tags: ["▲", "▼"],
-    manualTargetRule: gatewayManualTargetRule,
     hooks: {
       beforeCombat: [
         (runtime, state, { self, attacker, controllerSide }) => {
@@ -418,7 +364,7 @@ const UNIT_CATALOG = {
             return;
           }
           const reviveCodes = new Set(["patrol-monocyte", "cleaner-lysosome", "complement-barrier"]);
-          const candidates = runtime.getAllUnits(state.battle)
+          const candidates = runtime.getFriendlyUnitsByOriginalSide(state, self)
             .filter((unit) => !unit.alive && reviveCodes.has(unit.code));
 
           for (const unit of candidates) {
@@ -431,9 +377,8 @@ const UNIT_CATALOG = {
   "killer-t-protocol": defineUnit({
     name: "杀手T细胞-协议",
     power: 5,
-    description: `▲：攻击目标固定为一个持有【${BUFF_CATALOG[MARK_BUFF].shortLabel}】的其他单位。若与持有【${BUFF_CATALOG[MARK_BUFF].shortLabel}】的单位发生战斗，则本次战斗必定胜利。`,
+    description: `▲：电脑攻击目标为一个持有【${BUFF_CATALOG[MARK_BUFF].shortLabel}】的其他单位。若与持有【${BUFF_CATALOG[MARK_BUFF].shortLabel}】的单位发生战斗，则本次战斗必定胜利。`,
     tags: ["▲"],
-    manualTargetRule: killerManualTargetRule,
     hooks: {
       modifyCombatPower: [
         (runtime, state, { self, attacker, defender, currentPower }) => {
@@ -543,18 +488,15 @@ const UNIT_CATALOG = {
   lantern: defineUnit({
     name: "灯笼",
     power: 2,
-    description: "●：本单位第一次攻击或被攻击进入战斗时，不会因本次战斗被摧毁。▼：该次战斗结束后，本单位永久获得对手当前能力并以新能力取代原能力；不会修改对手能力；该获得不改变目标原本的攻击目标索引逻辑。",
+    description: "●：若本单位作为被攻击者进入战斗，则不会因本次战斗被摧毁。▼：若本单位本次战斗中作为被攻击者，则战斗结束后与主动攻击者永久交换能力；该交换不改变目标原本的攻击目标索引逻辑。",
     tags: ["●", "▼"],
     hooks: {
       preventCombatDestruction: [
-        (runtime, state, { self, threatenedUnit, attacker, defender }) => {
-          if (self.id !== threatenedUnit.id) {
+        (runtime, state, { self, threatenedUnit, defender }) => {
+          if (self.id !== threatenedUnit.id || self.id !== defender.id) {
             return false;
           }
-          if (self.id !== attacker?.id && self.id !== defender?.id) {
-            return false;
-          }
-          runtime.addLog(state, "hook", `${self.name} 在首次参与战斗时免于被摧毁。`, {
+          runtime.addLog(state, "hook", `${self.name} 在被攻击时免于被摧毁。`, {
             unitId: self.id,
           });
           return true;
@@ -562,15 +504,10 @@ const UNIT_CATALOG = {
       ],
       afterCombat: [
         (runtime, state, { self, attacker, defender }) => {
-          const participated = self.id === attacker?.id || self.id === defender?.id;
-          if (!participated) {
+          if (self.id !== defender.id || !attacker) {
             return;
           }
-          const opponent = self.id === attacker?.id ? defender : attacker;
-          if (!opponent) {
-            return;
-          }
-          runtime.copyAbility(state, self, opponent);
+          runtime.swapAbilities(state, self, attacker);
         },
       ],
     },
@@ -607,25 +544,19 @@ const UNIT_CATALOG = {
   phage: defineUnit({
     name: "噬菌体",
     power: 1,
-    description: `▲：若本单位攻击或被攻击的对手没有【${BUFF_CATALOG[ANTIBODY_BUFF].shortLabel}】，则使其获得【${BUFF_CATALOG[VIRUS_BUFF].shortLabel}】。`
+    description: `▲：若本单位攻击的目标没有【${BUFF_CATALOG[ANTIBODY_BUFF].shortLabel}】，则使其获得【${BUFF_CATALOG[VIRUS_BUFF].shortLabel}】。`
       + `【${BUFF_CATALOG[VIRUS_BUFF].shortLabel}】：${BUFF_CATALOG[VIRUS_BUFF].description}`,
     tags: ["▲"],
     hooks: {
       beforeCombat: [
         (runtime, state, { self, attacker, defender }) => {
-          let target = null;
-          if (self.id === attacker.id) {
-            target = defender;
-          } else if (self.id === defender?.id) {
-            target = attacker;
-          }
-          if (!target?.alive) {
+          if (self.id !== attacker.id || !defender?.alive) {
             return;
           }
-          if (runtime.hasBuff(target, ANTIBODY_BUFF)) {
+          if (runtime.hasBuff(defender, ANTIBODY_BUFF)) {
             return;
           }
-          runtime.applyBuff(state, VIRUS_BUFF, target, self);
+          runtime.applyBuff(state, VIRUS_BUFF, defender, self);
         },
       ],
     },

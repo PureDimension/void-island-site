@@ -5,116 +5,35 @@ function cloneValue(value) {
   return JSON.parse(JSON.stringify(value));
 }
 
-function getAllUnits(battle) {
-  return [...(battle?.playerUnits || []), ...(battle?.enemyUnits || [])];
-}
-
 function findUnit(battle, unitId) {
   if (!(battle && unitId)) {
     return null;
   }
-  return getAllUnits(battle).find((unit) => unit.id === unitId) || null;
+  return [...(battle.playerUnits || []), ...(battle.enemyUnits || [])]
+    .find((unit) => unit.id === unitId) || null;
 }
 
 function getDefinitionForUnit(unit) {
   return getUnitDefinition(unit?.abilityCode || unit?.code);
 }
 
-function hasBuff(unit, buffKey) {
-  return !!(unit?.buffs?.[buffKey] > 0);
-}
+const VIEW_RUNTIME_HELPERS = {
+  findUnit,
+};
 
-function hasActiveVirus(unit) {
-  return hasBuff(unit, VIRUS_BUFF) && !!unit?.runtimeState?.virusActivated;
-}
-
-function hasAnyBuff(unit) {
-  return Object.values(unit?.buffs || {}).some((value) => value > 0);
+function hasVirus(unit) {
+  return !!(unit?.buffs?.[VIRUS_BUFF] || 0);
 }
 
 function getControlSide(unit) {
   if (!unit) {
     return null;
   }
-  if (hasActiveVirus(unit)) {
+  if (hasVirus(unit)) {
     return unit.side === "enemy" ? "player" : "enemy";
   }
   return unit.side;
 }
-
-function resolvePriorityReferenceSide(reference) {
-  if (!reference) {
-    return null;
-  }
-  if (typeof reference === "string") {
-    return reference;
-  }
-  return getControlSide(reference);
-}
-
-function priorityCompare(a, b, reference = null) {
-  const referenceSide = resolvePriorityReferenceSide(reference);
-  if (referenceSide) {
-    const aIsEnemy = getControlSide(a) !== referenceSide;
-    const bIsEnemy = getControlSide(b) !== referenceSide;
-    if (aIsEnemy !== bIsEnemy) {
-      return aIsEnemy ? -1 : 1;
-    }
-  }
-  if (a.side !== b.side) {
-    return a.side === "enemy" ? -1 : 1;
-  }
-  return a.slot - b.slot;
-}
-
-function pickByPriority(units, reference = null) {
-  return [...units].sort((a, b) => priorityCompare(a, b, reference))[0] || null;
-}
-
-function pickByPower(units, mode, reference = null) {
-  if (!units.length) {
-    return null;
-  }
-  const values = units.map((unit) => unit.power);
-  const targetPower = mode === "highest" ? Math.max(...values) : Math.min(...values);
-  return pickByPriority(units.filter((unit) => unit.power === targetPower), reference);
-}
-
-function getFriendlySupportUnits(battle, self, controllerSide = self.side) {
-  return getAllUnits(battle)
-    .filter((unit) => unit.alive)
-    .filter((unit) => getControlSide(unit) === controllerSide);
-}
-
-function canUnitBeTargetedBy(attacker, target) {
-  if (!(attacker && attacker.alive && target && target.alive) || attacker.id === target.id) {
-    return false;
-  }
-  if (getDefinitionForUnit(target).display?.combatTargetable === false) {
-    return false;
-  }
-  if (!hasActiveVirus(target)) {
-    return true;
-  }
-  const originalEnemySide = target.side === "enemy" ? "player" : "enemy";
-  return getControlSide(attacker) !== originalEnemySide;
-}
-
-const VIEW_RUNTIME_HELPERS = {
-  findUnit,
-};
-
-const TARGET_RULE_RUNTIME = {
-  getAllUnits,
-  canUnitBeTargetedBy,
-  pickByPower,
-  pickByPriority,
-  getFriendlySupportUnits: (state, self, controllerSide) => (
-    getFriendlySupportUnits(state.battle, self, controllerSide)
-  ),
-  hasBuff,
-  hasAnyBuff,
-};
 
 function getBuffDescriptions(unit) {
   if (!unit?.buffs) {
@@ -224,55 +143,16 @@ function isPlayerCommandable(unit) {
   return getControlSide(unit) === "player";
 }
 
-function getForcedTargetId(battle, attacker) {
-  if (!(battle && attacker && attacker.alive)) {
-    return null;
-  }
-
-  const targetRule = getDefinitionForUnit(attacker).manualTargetRule;
-  if (typeof targetRule !== "function") {
-    return null;
-  }
-
-  const candidates = getAllUnits(battle)
-    .filter((unit) => unit.id !== attacker.id)
-    .filter((unit) => unit.alive)
-    .filter((unit) => getDefinitionForUnit(unit).display?.manualTargetable !== false)
-    .filter((unit) => targetRule(TARGET_RULE_RUNTIME, { battle }, {
-      self: attacker,
-      target: unit,
-    }));
-
-  return pickByPriority(candidates, attacker)?.id || null;
-}
-
-function canPlayerChooseTarget(battle, attacker, unit) {
-  if (!(battle && attacker && attacker.alive && unit && unit.alive) || attacker.id === unit.id) {
+function canPlayerChooseTarget(attacker, unit) {
+  if (!(attacker && attacker.alive && unit && unit.alive) || attacker.id === unit.id) {
     return false;
   }
   const definition = getDefinitionForUnit(unit);
   if (definition.display?.manualTargetable === false) {
     return false;
   }
-
-  const forcedTargetId = getForcedTargetId(battle, attacker);
-  if (forcedTargetId) {
-    return forcedTargetId === unit.id;
-  }
-
   return getControlSide(unit) !== getControlSide(attacker)
     || definition.display?.enemyLikeForPlayerTarget === true;
-}
-
-function getVirusState(unit) {
-  if (!hasBuff(unit, VIRUS_BUFF)) {
-    return null;
-  }
-  return hasActiveVirus(unit) ? "active" : "latent";
-}
-
-function hasLockedTarget(unit) {
-  return typeof getDefinitionForUnit(unit).manualTargetRule === "function";
 }
 
 module.exports = {
@@ -287,7 +167,4 @@ module.exports = {
   isPlayerVisibleEnemy,
   isPlayerCommandable,
   canPlayerChooseTarget,
-  getForcedTargetId,
-  getVirusState,
-  hasLockedTarget,
 };

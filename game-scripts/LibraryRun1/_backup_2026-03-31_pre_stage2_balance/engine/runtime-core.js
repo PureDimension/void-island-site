@@ -237,15 +237,11 @@ function pickByPower(units, mode, reference = null) {
 }
 
 function alivePlayerUnits(state) {
-  return getAllUnits(state.battle)
-    .filter((unit) => unit.alive)
-    .filter((unit) => getControlSide(unit) === "player");
+  return getLivingUnits(state.battle.playerUnits);
 }
 
 function aliveEnemyUnits(state) {
-  return getAllUnits(state.battle)
-    .filter((unit) => unit.alive)
-    .filter((unit) => getControlSide(unit) === "enemy");
+  return getLivingUnits(state.battle.enemyUnits);
 }
 
 function hasBuff(unit, buffKey) {
@@ -256,39 +252,11 @@ function hasAnyBuff(unit) {
   return Object.values(unit?.buffs || {}).some((value) => value > 0);
 }
 
-function hasActiveVirus(unit) {
-  return hasBuff(unit, VIRUS_BUFF) && !!unit?.runtimeState?.virusActivated;
-}
-
-function syncVirusActivationForUnit(state, unit) {
-  if (!(state?.battle && unit && unit.alive && hasBuff(unit, VIRUS_BUFF))) {
-    return false;
-  }
-  unit.runtimeState = unit.runtimeState || {};
-  if (unit.runtimeState.virusActivated) {
-    return true;
-  }
-  if (state.battle.turn > unit.power) {
-    unit.runtimeState.virusActivated = true;
-    return true;
-  }
-  return false;
-}
-
-function syncVirusActivation(state) {
-  if (!state?.battle) {
-    return;
-  }
-  for (const unit of getAllUnits(state.battle)) {
-    syncVirusActivationForUnit(state, unit);
-  }
-}
-
 function getControlSide(unit) {
   if (!unit) {
     return null;
   }
-  if (hasActiveVirus(unit)) {
+  if (hasBuff(unit, VIRUS_BUFF)) {
     return unit.side === "enemy" ? "player" : "enemy";
   }
   return unit.side;
@@ -331,7 +299,7 @@ function canUnitBeTargetedBy(attacker, target) {
   if (getDisplayConfig(target).combatTargetable === false) {
     return false;
   }
-  if (!hasActiveVirus(target)) {
+  if (!hasBuff(target, VIRUS_BUFF)) {
     return true;
   }
   const originalEnemySide = target.side === "enemy" ? "player" : "enemy";
@@ -376,20 +344,13 @@ function canEnemyTreatAsPlayerTarget(unit) {
   return getDisplayConfig(unit).excludedFromEnemyAutoTarget !== true;
 }
 
-function canPlayerTargetEnemy(state, attacker, unit) {
+function canPlayerTargetEnemy(attacker, unit) {
   if (!(attacker && attacker.alive && unit && unit.alive) || attacker.id === unit.id) {
     return false;
   }
   const display = getDisplayConfig(unit);
   if (display.manualTargetable === false) {
     return false;
-  }
-  const targetRule = getUnitDefinitionForUnit(attacker).manualTargetRule;
-  if (typeof targetRule === "function") {
-    return !!targetRule(createRuntimeHelpers(), state, {
-      self: attacker,
-      target: unit,
-    });
   }
   return areHostile(attacker, unit) || display.enemyLikeForPlayerTarget === true;
 }
@@ -465,8 +426,7 @@ function applyBuff(state, buffKey, recipient, sourceUnit) {
 
   if (buffKey === VIRUS_BUFF) {
     recipient.runtimeState = recipient.runtimeState || {};
-    recipient.runtimeState.virusActivated = false;
-    syncVirusActivationForUnit(state, recipient);
+    recipient.runtimeState.virusExpiresAfterTurn = state.battle.turn + 2;
   }
 
   if (buffKey === EMP_BUFF) {
@@ -492,7 +452,7 @@ function clearBuff(state, buffKey, unit, options = {}) {
   }
   unit.buffs[buffKey] = 0;
   if (buffKey === VIRUS_BUFF && unit.runtimeState) {
-    delete unit.runtimeState.virusActivated;
+    delete unit.runtimeState.virusExpiresAfterTurn;
   }
   if (!options.silent) {
     const buff = BUFF_CATALOG[buffKey];
@@ -535,7 +495,7 @@ function reviveUnit(state, unit, reason, sourceUnit = null, forcedSide = null) {
   if (!unit || unit.alive) {
     return false;
   }
-  const wasVirusCarrier = hasActiveVirus(unit);
+  const wasVirusCarrier = hasBuff(unit, VIRUS_BUFF);
   const nextSide = forcedSide || (wasVirusCarrier ? (unit.side === "enemy" ? "player" : "enemy") : unit.side);
   unit.alive = true;
   unit.destroyedAtTurn = null;
@@ -558,8 +518,6 @@ function enforcePowerBounds(state, unit, detail = {}) {
   if (!unit || !unit.alive) {
     return;
   }
-
-  syncVirusActivationForUnit(state, unit);
 
   if (unit.power < 0 || unit.power > 9) {
     addLog(state, "rule", `${unit.name} 的 POWER 变为 ${unit.power}，越界摧毁。`, {
@@ -594,7 +552,6 @@ function createRuntimeHelpers() {
     isSameSupportCamp,
     pickByPower,
     pickByPriority,
-    copyAbility,
     reviveUnit,
     swapAbilities,
   };
@@ -628,23 +585,6 @@ function swapAbilities(state, unitA, unitB) {
   addLog(state, "hook", `${unitA.name} 与 ${unitB.name} 交换了能力。`, {
     unitId: unitA.id,
     targetUnitId: unitB.id,
-  });
-}
-
-function copyAbility(state, recipient, sourceUnit) {
-  if (!(recipient && sourceUnit)) {
-    return;
-  }
-
-  recipient.abilityCode = sourceUnit.abilityCode;
-  recipient.runtimeState = clone(
-    sourceUnit.runtimeState || getUnitDefinitionForUnit(sourceUnit).runtimeState || {}
-  );
-  refreshUnitPresentation(recipient);
-
-  addLog(state, "hook", `${recipient.name} 复制了 ${sourceUnit.name} 的能力。`, {
-    unitId: recipient.id,
-    targetUnitId: sourceUnit.id,
   });
 }
 
@@ -1028,6 +968,12 @@ function clearTurnEndBuffs(state) {
       if (buff.timing !== "turn-end" || !hasBuff(unit, buff.key)) {
         continue;
       }
+      if (
+        buff.key === VIRUS_BUFF
+        && (unit.runtimeState?.virusExpiresAfterTurn ?? Number.POSITIVE_INFINITY) > state.battle.turn
+      ) {
+        continue;
+      }
       clearBuff(state, buff.key, unit);
     }
   }
@@ -1195,10 +1141,6 @@ module.exports = class LibraryRun1Runtime extends BaseGame {
       return state;
     }
 
-    if (state.phase === "BATTLE") {
-      syncVirusActivation(state);
-    }
-
     if (state.finalResults) {
       return state;
     }
@@ -1311,7 +1253,6 @@ module.exports = class LibraryRun1Runtime extends BaseGame {
         }
 
         state.battle.turn += 1;
-        syncVirusActivation(state);
         state.battle.status = "ENEMY_OPENING";
         resolveEnemyOpeningStrike(state);
 
@@ -1389,7 +1330,7 @@ module.exports = class LibraryRun1Runtime extends BaseGame {
     const attacker = findUnit(state.battle, data?.attackerId);
     const defender = findUnit(state.battle, data?.targetId);
 
-    if (!canPlayerCommand(attacker) || !canPlayerTargetEnemy(state, attacker, defender)) {
+    if (!canPlayerCommand(attacker) || !canPlayerTargetEnemy(attacker, defender)) {
       return state;
     }
 
@@ -1472,7 +1413,6 @@ module.exports = class LibraryRun1Runtime extends BaseGame {
     }
 
     state.battle.turn += 1;
-    syncVirusActivation(state);
     state.battle.status = "ENEMY_OPENING";
     resolveEnemyOpeningStrike(state);
 

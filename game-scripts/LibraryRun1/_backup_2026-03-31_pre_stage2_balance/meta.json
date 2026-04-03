@@ -1,0 +1,8 @@
+{
+  "id": "LibraryRun1",
+  "name": "图书馆之旅前传",
+  "version": "0.1.0",
+  "minPlayers": 1,
+  "maxPlayers": 1,
+  "description": "单人策略关卡试玩版。\n系统尚未开发完毕，仅开发第一关之前的剧情和第二关的战斗，建议等完整版上线以后再游玩！"
+}

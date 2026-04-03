@@ -11,6 +11,9 @@ const {
   isPlayerVisibleEnemy: modelIsPlayerVisibleEnemy,
   isPlayerCommandable: modelIsPlayerCommandable,
   canPlayerChooseTarget: modelCanPlayerChooseTarget,
+  getForcedTargetId: modelGetForcedTargetId,
+  getVirusState: modelGetVirusState,
+  hasLockedTarget: modelHasLockedTarget,
 } = require("./engine/view-model");
 const { buildAssetUrl, resolveMusicTrack } = require("./data/music");
 
@@ -441,9 +444,18 @@ function ArrowLayer({ arrow }) {
 function CellMeta({ unit, gameState }) {
   const power = modelGetPowerDisplay(unit, gameState);
   const buffLabels = modelGetBuffShortLabels(unit);
+  const virusState = modelGetVirusState(unit);
+  const hasLockedTarget = modelHasLockedTarget(unit);
+  const showLockedTarget = hasLockedTarget && (modelIsPlayerCommandable(unit) || unit.abilityCode !== unit.code);
 
   return (
     <div className="cell-meta">
+      {showLockedTarget ? <div className="unit-status-chip locked-target">锁定目标</div> : null}
+      {virusState ? (
+        <div className={`unit-status-chip virus ${virusState}`}>
+          {virusState === "active" ? "病毒生效" : "病毒潜伏"}
+        </div>
+      ) : null}
       <div className="unit-power-line">
         <span className="power-label">POWER</span>
         <span className="power-value">{power.value}</span>
@@ -491,6 +503,7 @@ function UnitCell({
   registerRef,
 }) {
   const isDisguise = modelGetUnitDisplayMode(unit) === "split";
+  const forceTargetLocked = modelHasLockedTarget(unit);
 
   const rootClassName = [
     "unit-cell",
@@ -519,7 +532,7 @@ function UnitCell({
               ×
             </button>
           ) : null}
-          {targetSelected && onCancelTarget ? (
+          {targetSelected && onCancelTarget && !forceTargetLocked ? (
             <button type="button" className="cancel-chip" onClick={onCancelTarget}>
               ×
             </button>
@@ -558,7 +571,7 @@ function UnitCell({
             ×
           </button>
         ) : null}
-        {targetSelected && onCancelTarget ? (
+        {targetSelected && onCancelTarget && !forceTargetLocked ? (
           <button type="button" className="cancel-chip top" onClick={onCancelTarget}>
             ×
           </button>
@@ -726,6 +739,7 @@ export default function LibraryRun1View({ gameState, onAction }) {
 
   const selectedAttacker = allUnits.find((unit) => unit.id === selectedAttackerId) || null;
   const selectedTarget = allUnits.find((unit) => unit.id === selectedTargetId) || null;
+  const forcedTargetId = selectedAttacker ? modelGetForcedTargetId(battle, selectedAttacker) : null;
   const inspectedUnit = allUnits.find((unit) => unit.id === inspectId)
     || selectedAttacker
     || playerUnits.find((unit) => unit.alive)
@@ -833,6 +847,34 @@ export default function LibraryRun1View({ gameState, onAction }) {
     }
   }, [selectedTargetId, selectedAttackerId, enemyConfirm, displayBattle]);
 
+  useEffect(() => {
+    if (enemyConfirm) {
+      return;
+    }
+    if (!selectedAttacker) {
+      if (selectedTargetId) {
+        setSelectedTargetId(null);
+      }
+      return;
+    }
+    if (forcedTargetId) {
+      if (selectedTargetId !== forcedTargetId) {
+        setSelectedTargetId(forcedTargetId);
+      }
+      return;
+    }
+    if (selectedTargetId && !isTargetCandidate(selectedTarget, selectedAttacker)) {
+      setSelectedTargetId(null);
+    }
+  }, [
+    selectedAttackerId,
+    forcedTargetId,
+    selectedTargetId,
+    enemyConfirm,
+    battle?.turn,
+    battle?.actionLog?.length,
+  ]);
+
   if (!gameState) {
     return (
       <div className="library-run-root">
@@ -844,12 +886,11 @@ export default function LibraryRun1View({ gameState, onAction }) {
   const canAttack = !!(
     selectedAttacker
     && selectedTarget
-    && modelIsPlayerVisibleEnemy(selectedTarget)
-    && modelIsManualTargetable(selectedTarget)
     && selectedAttacker.alive
     && selectedTarget.alive
     && battle?.status === "PLAYER_TURN"
     && !enemyConfirm
+    && isTargetCandidate(selectedTarget, selectedAttacker)
   );
 
   const confirmControllerSide = enemyConfirm?.controllerSide || null;
@@ -870,7 +911,7 @@ export default function LibraryRun1View({ gameState, onAction }) {
     && unit.alive
     && !enemyConfirm
     && modelIsManualTargetable(unit)
-    && modelCanPlayerChooseTarget(attacker, unit)
+    && modelCanPlayerChooseTarget(battle, attacker, unit)
   );
 
   const registerNode = (id) => (node) => {
@@ -884,6 +925,11 @@ export default function LibraryRun1View({ gameState, onAction }) {
     if (!isAttackerCandidate(unit)) {
       return;
     }
+    if (selectedAttackerId === unit.id) {
+      setSelectedAttackerId(null);
+      setSelectedTargetId(null);
+      return;
+    }
     setSelectedAttackerId(unit.id);
     if (selectedTargetId === unit.id) {
       setSelectedTargetId(null);
@@ -892,6 +938,9 @@ export default function LibraryRun1View({ gameState, onAction }) {
 
   const selectTarget = (unit) => {
     setInspectId(unit.id);
+    if (selectedAttacker && modelGetForcedTargetId(battle, selectedAttacker)) {
+      return;
+    }
     if (!isTargetCandidate(unit)) {
       return;
     }
@@ -905,6 +954,9 @@ export default function LibraryRun1View({ gameState, onAction }) {
       if (selectedTargetId === unit.id) {
         setSelectedTargetId(null);
       }
+      return;
+    }
+    if (selectedAttacker && modelGetForcedTargetId(battle, selectedAttacker)) {
       return;
     }
     if (isTargetCandidate(unit)) {
@@ -947,6 +999,7 @@ export default function LibraryRun1View({ gameState, onAction }) {
       <div className="battle-toolbar">
         {!isStoryPhase ? (
           <>
+            <div className="mini-status">Turn {battle?.turn || 1}</div>
             <button
               type="button"
               className={`mini-button ${hasHighlight(guideStep, "area", "toolbar-back") ? "guide-glow" : ""}`}
@@ -1133,6 +1186,8 @@ function StyleBlock() {
         align-items: flex-start;
         padding: 2.2rem 1.5rem 1rem;
         cursor: pointer;
+        user-select: none;
+        -webkit-user-select: none;
       }
 
       .story-noise {
@@ -1176,6 +1231,8 @@ function StyleBlock() {
         font-size: clamp(1rem, 1.55vw, 1.18rem);
         line-height: 1.92;
         color: rgba(236, 248, 255, 0.95);
+        user-select: none;
+        -webkit-user-select: none;
       }
 
       .story-hint {
@@ -1194,6 +1251,22 @@ function StyleBlock() {
         z-index: 14;
         display: flex;
         gap: 0.45rem;
+        align-items: center;
+      }
+
+      .mini-status {
+        min-width: 4.15rem;
+        height: 2.3rem;
+        padding: 0 0.9rem;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        border-radius: 999px;
+        border: 1px solid rgba(123, 218, 255, 0.18);
+        background: rgba(6, 20, 42, 0.74);
+        color: rgba(214, 242, 255, 0.88);
+        font-size: 0.72rem;
+        letter-spacing: 0.12em;
       }
 
       .music-button {
@@ -1591,6 +1664,39 @@ function StyleBlock() {
         height: 100%;
         padding: 0.44rem 0.34rem 0.52rem;
         pointer-events: none;
+      }
+
+      .unit-status-chip {
+        width: fit-content;
+        max-width: 100%;
+        margin: 0 auto 0.14rem;
+        padding: 0.08rem 0.34rem;
+        border-radius: 999px;
+        border: 1px solid rgba(128, 221, 255, 0.2);
+        background: rgba(8, 23, 45, 0.78);
+        color: rgba(229, 247, 255, 0.9);
+        font-size: 0.5rem;
+        letter-spacing: 0.06em;
+        white-space: nowrap;
+      }
+
+      .unit-status-chip.locked-target {
+        border-color: rgba(255, 196, 143, 0.24);
+        background: rgba(85, 39, 16, 0.76);
+        color: rgba(255, 224, 188, 0.92);
+      }
+
+      .unit-status-chip.virus.latent {
+        border-color: rgba(173, 134, 255, 0.24);
+        background: rgba(42, 28, 76, 0.76);
+        color: rgba(221, 205, 255, 0.92);
+      }
+
+      .unit-status-chip.virus.active {
+        border-color: rgba(255, 103, 141, 0.28);
+        background: rgba(101, 19, 42, 0.82);
+        color: rgba(255, 211, 224, 0.96);
+        box-shadow: 0 0 12px rgba(255, 86, 130, 0.2);
       }
 
       .unit-power-line {
