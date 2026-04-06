@@ -88,6 +88,14 @@ const GUIDE_SETS = {
       addRules: ["rules"],
     },
     {
+      id: "toolbar-tips",
+      speaker: "水铃儿",
+      text: "卡关了看看TIPS，里面会有一些关卡提示，刚开始只能看到模糊的提示；随着你逐步揭示，后面的提示也会解锁，足够你通关当前关卡。所有TIPS都是在不使用影子能力的情况下通关的路径。",
+      mode: "manual",
+      highlights: [{ type: "area", id: "toolbar-tips" }],
+      addRules: ["tips"],
+    },
+    {
       id: "free-play",
       speaker: "水铃儿",
       text: "好啦，现在开始自由行动吧。先把剩下的工蜂清掉，我们就能离开蜂巢外圈。",
@@ -144,6 +152,13 @@ const GUIDE_SETS = {
       highlights: [{ type: "unit", id: "s2-macrophage" }, { type: "unit", id: "s2-gateway" }, { type: "unit", id: "s2-killer" }],
     },
     {
+      id: "stage2-core-enemies",
+      speaker: "萤草",
+      text: "这三个单位都有可能攻击到友军，即使它们有【抗体】【标记】用来区分友方和敌方，也总是会出错，这一点可以多加利用。",
+      mode: "manual",
+      highlights: [{ type: "unit", id: "s2-macrophage" }, { type: "unit", id: "s2-gateway" }, { type: "unit", id: "s2-killer" }],
+    },
+    {
       id: "stage2-macrophage",
       speaker: "萤草",
       text: "巨噬细胞会不断强化自己，但它的目标描述没有限定阵营，所以它其实很容易打到友军。",
@@ -165,9 +180,9 @@ const GUIDE_SETS = {
     {
       id: "stage2-killer",
       speaker: "萤草",
-      text: "杀手T细胞-协议专门盯着带【标记】的对象下死手。你一开场就已经被挂上了【标记】，所以它现在非常危险。",
+      text: "杀手T细胞-协议专门盯着带【标记】的对象下死手。你一开场就已经被挂上了【标记】；POWER 旁边那个红色十字标记就是【标记】的样子，而且全场同一时间只会存在一个【标记】。",
       mode: "manual",
-      highlights: [{ type: "unit", id: "s2-killer" }, { type: "unit", id: "p-robot" }, { type: "area", id: "panel-buffs" }],
+      highlights: [{ type: "unit", id: "s2-killer" }, { type: "unit", id: "p-robot" }, { type: "area", id: "power-readout" }],
     },
     {
       id: "stage2-order",

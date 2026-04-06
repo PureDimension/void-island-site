@@ -255,7 +255,11 @@ function canPlayerChooseTarget(battle, attacker, unit) {
     return false;
   }
 
+  const targetRule = getDefinitionForUnit(attacker).manualTargetRule;
   const forcedTargetId = getForcedTargetId(battle, attacker);
+  if (typeof targetRule === "function") {
+    return !!forcedTargetId && forcedTargetId === unit.id;
+  }
   if (forcedTargetId) {
     return forcedTargetId === unit.id;
   }
@@ -275,6 +279,17 @@ function hasLockedTarget(unit) {
   return typeof getDefinitionForUnit(unit).manualTargetRule === "function";
 }
 
+function getUnitActiveSkills(unit, battle) {
+  if (!unit) {
+    return [];
+  }
+  const activeSkills = getDefinitionForUnit(unit).activeSkills || [];
+  return activeSkills.map((skill) => ({
+    ...cloneValue(skill),
+    used: !!battle?.activeSkillUsage?.[skill.key],
+  }));
+}
+
 module.exports = {
   getBuffDescriptions,
   getBuffShortLabels,
@@ -290,4 +305,5 @@ module.exports = {
   getForcedTargetId,
   getVirusState,
   hasLockedTarget,
+  getUnitActiveSkills,
 };

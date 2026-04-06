@@ -6,10 +6,12 @@ const FLOW = [
   { type: "story", sceneId: "tutorial-pre" },
   { type: "battle", stageId: TUTORIAL_STAGE_ID },
   { type: "story", sceneId: "tutorial-post" },
+  { type: "story", sceneId: "tutorial-post-unlock", requiresMode: "story" },
   { type: "story", sceneId: "stage1-pre" },
   { type: "battle", stageId: STAGE_1_ID },
   { type: "story", sceneId: "stage2-pre" },
   { type: "battle", stageId: STAGE_2_ID },
+  { type: "story", sceneId: "stage3-pre" },
 ];
 
 module.exports = {

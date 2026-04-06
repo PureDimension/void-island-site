@@ -9,7 +9,8 @@ const TRACK_FILE_MAP = {
 };
 
 export async function GET(_request, context) {
-  const track = context?.params?.track;
+  const params = await context?.params;
+  const track = params?.track;
   const fileName = TRACK_FILE_MAP[track];
 
   if (!fileName) {

@@ -2,7 +2,11 @@ const STORY_SCENES = {
   "tutorial-pre": [
     {
       paragraphs: [
-        "打开右上角音乐播放器获得最好体验",
+        "打开右上角音乐播放器获得最好体验。",
+        "本游戏将会分为两种难度，故事难度主角将会随着剧情的推进逐步解锁能力，而挑战难度主角不会获得任何能力。",
+        "选择挑战模式会体验到原汁原味的解谜难度，而选择故事模式会看到炒鸡帅的技能特效（真帅吗这CSS随便写个动画就写得我想和屋顶拔河了）",
+        "本游戏保证每关具有多种解法，但难度较高，即使是故事模式也不例外。如果想要攻克挑战难度并遇到阻碍，可以查看查看TIPS寻找灵感。故事模式难度可能会修改。",
+        "剧情演出中可能出现极轻微的惊吓成分。",
       ],
     },
     {
@@ -59,6 +63,16 @@ const STORY_SCENES = {
       paragraphs: [
         "最后一只工蜂坠进断续闪烁的蜂巢光带里，周围终于安静下来。",
         "“差不多了。”水铃儿拨开残余噪点，“我也该离开这里了，你呢？还要停在此处吗？”",
+        "“总之先跟我离开这里吧。”",
+      ],
+    },
+  ],
+  "tutorial-post-unlock": [
+    {
+      tone: "unlock-red",
+      paragraphs: [
+        "您已获得蜂巢世界能力【空间重组】（挑战模式禁用）。作为蜂巢世界的旅客，你只能获得蜂巢世界的基础能力。",
+        "【空间重组】：每关限一次。选择一个己方单位和一个其他单位，将前者的部分 POWER 转移给后者。",
       ],
     },
   ],
@@ -119,13 +133,6 @@ const STORY_SCENES = {
       ],
     },
   ],
-  // "stage2-pre": [
-  //   {
-  //     paragraphs: [
-  //       "剧情待补充",
-  //     ],
-  //   },
-  // ],
   "stage2-pre": [
     {
       paragraphs: [
@@ -199,6 +206,13 @@ const STORY_SCENES = {
       ],
     },
     {
+      tone: "unlock-red",
+      paragraphs: [
+        "您已获得时域世界能力【时间流逝】（挑战模式禁用）。作为时域世界的旅客，你只能获得最基础的时间操纵技术。",
+        "【时间流逝】：每关限一次，立刻结束当前回合并进入下一回合。敌方的行动轮次将因此产生变化。",
+      ],
+    },
+    {
       paragraphs: [
         "回忆被一串不和谐的信号打断。",
         "”你是自己一个人来的吗？看那些模块可不像【影子】能搞出来的哦。“",
@@ -227,6 +241,54 @@ const STORY_SCENES = {
       ],
     },
   ],
+  "stage3-pre": [
+    {
+      paragraphs: [
+        "这对影子来说，毫无疑问是一场恶战。战胜了以后的",
+      ],
+    },
+  ],
 };
+
+const STORY_BACKGROUND_PLAN = {
+  "tutorial-pre": {
+    0: "default",
+    3: "memory",
+  },
+  "tutorial-post": {
+    0: "memory",
+  },
+  "tutorial-post-unlock": {
+    0: "default",
+  },
+  "stage1-pre": {
+    0: "memory",
+    4: "default",
+  },
+  "stage2-pre": {
+    0: "default",
+    1: "memory",
+    10: "default",
+  },
+  "stage3-pre": {
+    0: "default",
+  },
+};
+
+Object.entries(STORY_BACKGROUND_PLAN).forEach(([sceneId, plan]) => {
+  const pages = STORY_SCENES[sceneId];
+  if (!pages) {
+    return;
+  }
+  let currentBackground = "default";
+  pages.forEach((page, index) => {
+    if (plan[index]) {
+      currentBackground = plan[index];
+    }
+    if (!page.background) {
+      page.background = currentBackground;
+    }
+  });
+});
 
 module.exports = { STORY_SCENES };

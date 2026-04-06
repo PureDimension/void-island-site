@@ -8,6 +8,7 @@ const { STORY_SCENES } = require("../data/stories");
 const { FLOW, TUTORIAL_STAGE_ID, STAGE_1_ID, STAGE_2_ID } = require("../data/flow");
 const { RULE_TEXT } = require("../data/rules");
 const { GUIDE_SETS } = require("../data/guides");
+const { getTipsForStage, canRevealTip } = require("../data/tips");
 const { STAGE_DEFS } = require("../data/stages");
 const { EMPTY_HOOKS, getUnitDefinition } = require("../data/units/catalog");
 const { resolveEnemyAction } = require("./enemy-ai");
@@ -79,14 +80,15 @@ function createUnit({ id, slot, side, code, name, power, description, tags, buff
   return refreshUnitPresentation(unit);
 }
 
-function instantiateLineup(lineup) {
+function instantiateLineup(state, stageId, lineup) {
   return lineup.map((entry) => {
-    const definition = getUnitDefinition(entry.template);
+    const template = entry.templateByMode?.[state?.campaign?.mode] || entry.template;
+    const definition = getUnitDefinition(template);
     return createUnit({
       id: entry.id,
       slot: entry.slot,
       side: entry.side,
-      code: entry.template,
+      code: template,
       name: entry.name || definition.name,
       power: entry.power ?? definition.power,
       description: entry.description,
@@ -145,7 +147,7 @@ function advanceGuide(state) {
   syncCurrentGuideRules(state);
 }
 
-function buildBattle(stageId) {
+function buildBattle(stageId, state) {
   const stageDefinition = STAGE_DEFS[stageId];
   return {
     stageId: stageDefinition.stageId,
@@ -154,6 +156,7 @@ function buildBattle(stageId) {
     enemyLogicText: clone(stageDefinition.enemyLogicText),
     enemyAi: stageDefinition.enemyAi,
     stageRuntime: clone(stageDefinition.runtimeState || {}),
+    activeSkillUsage: {},
     status: "PLAYER_TURN",
     turn: 1,
     destroyedUnitIds: [],
@@ -165,8 +168,8 @@ function buildBattle(stageId) {
     lastPlayerAttackerId: null,
     lastCombatAttackerId: null,
     lastCombatDefenderId: null,
-    playerUnits: instantiateLineup(stageDefinition.lineup.playerUnits),
-    enemyUnits: instantiateLineup(stageDefinition.lineup.enemyUnits),
+    playerUnits: instantiateLineup(state, stageId, stageDefinition.lineup.playerUnits),
+    enemyUnits: instantiateLineup(state, stageId, stageDefinition.lineup.enemyUnits),
     actionLog: [
       {
         turn: 1,
@@ -268,7 +271,7 @@ function syncVirusActivationForUnit(state, unit) {
   if (unit.runtimeState.virusActivated) {
     return true;
   }
-  if (state.battle.turn > unit.power) {
+  if (state.battle.turn >= unit.power) {
     unit.runtimeState.virusActivated = true;
     return true;
   }
@@ -602,7 +605,19 @@ function createRuntimeHelpers() {
 
 function runHooks(hookName, state, payload, units = null) {
   const runtime = createRuntimeHelpers();
-  const pool = sortByPriority(units || getAllUnits(state.battle));
+  let sourcePool = units || getAllUnits(state.battle);
+
+  if (!units && hookName === "afterCombat") {
+    const participantIds = new Set([
+      payload?.attacker?.id,
+      payload?.defender?.id,
+    ].filter(Boolean));
+    sourcePool = sourcePool.filter((unit) => unit.alive || participantIds.has(unit.id));
+  } else if (!units) {
+    sourcePool = sourcePool.filter((unit) => unit.alive);
+  }
+
+  const pool = sortByPriority(sourcePool);
   for (const unit of pool) {
     const hooks = getHookBucket(unit)[hookName] || [];
     for (const hook of hooks) {
@@ -660,7 +675,7 @@ function getCombatPower(unit, state, context) {
 
 function preventCombatDestruction(state, threatenedUnit, context) {
   const runtime = createRuntimeHelpers();
-  for (const unit of sortByPriority(getAllUnits(state.battle))) {
+  for (const unit of sortByPriority(getAllUnits(state.battle).filter((current) => current.alive))) {
     const hooks = getHookBucket(unit).preventCombatDestruction || [];
     for (const hook of hooks) {
       if (hook(runtime, state, { ...context, self: unit, threatenedUnit })) {
@@ -1051,9 +1066,25 @@ function buildStoryState(sceneId) {
   };
 }
 
+function getStoryPageBackground(page, fallback = "default") {
+  return page?.background || fallback;
+}
+
+function getFlowEntry(state, flowIndex) {
+  let nextIndex = flowIndex;
+  while (FLOW[nextIndex] && FLOW[nextIndex].requiresMode && FLOW[nextIndex].requiresMode !== state.campaign.mode) {
+    nextIndex += 1;
+  }
+  return {
+    entry: FLOW[nextIndex] || null,
+    flowIndex: nextIndex,
+  };
+}
+
 function moveToFlow(state, flowIndex) {
-  const entry = FLOW[flowIndex];
-  state.flowIndex = flowIndex;
+  const resolved = getFlowEntry(state, flowIndex);
+  const entry = resolved.entry;
+  state.flowIndex = resolved.flowIndex;
   state.pendingDefeat = null;
   state.finalResults = null;
 
@@ -1071,13 +1102,14 @@ function moveToFlow(state, flowIndex) {
   if (entry.type === "story") {
     state.phase = "STORY";
     state.story = buildStoryState(entry.sceneId);
+    state.storyBackground = getStoryPageBackground(state.story.pages[0], state.storyBackground || "default");
     state.battle = null;
     return;
   }
 
   state.phase = "BATTLE";
   state.story = null;
-  state.battle = buildBattle(entry.stageId);
+  state.battle = buildBattle(entry.stageId, state);
   syncCurrentGuideRules(state);
 }
 
@@ -1158,16 +1190,28 @@ function isTutorialAttackAllowed(state, attackerId, targetId) {
   return false;
 }
 
+function getUnitActiveSkill(unit, skillKey) {
+  return getUnitDefinitionForUnit(unit).activeSkills?.find((skill) => skill.key === skillKey) || null;
+}
+
+function hasUsedActiveSkill(state, skillKey) {
+  return !!state?.battle?.activeSkillUsage?.[skillKey];
+}
+
 module.exports = class LibraryRun1Runtime extends BaseGame {
   setup() {
     const state = {
       phase: "STORY",
       flowIndex: 0,
       story: null,
+      storyBackground: "default",
+      modeSelectResume: null,
       campaign: {
+        mode: null,
         overloadUsed: false,
         clearedStages: [],
         ratings: {},
+        revealedTips: {},
       },
       history: [],
       battle: null,
@@ -1218,7 +1262,28 @@ module.exports = class LibraryRun1Runtime extends BaseGame {
       const previous = clone(state.history[state.history.length - 1]);
       previous.history = state.history.slice(0, -1);
       previous.pendingDefeat = null;
+      previous.campaign.revealedTips = clone(state.campaign.revealedTips || {});
       return previous;
+    }
+
+    if (action === "reveal-tip") {
+      if (state.phase !== "BATTLE" || !state.battle) {
+        return state;
+      }
+
+      const stageId = state.battle.stageId;
+      const tipId = data?.tipId;
+      const tip = getTipsForStage(stageId).find((item) => item.id === tipId);
+      if (!tip || !canRevealTip(state, stageId, tip)) {
+        return state;
+      }
+
+      const revealedTips = state.campaign.revealedTips || {};
+      const currentStageTips = new Set(revealedTips[stageId] || []);
+      currentStageTips.add(tipId);
+      revealedTips[stageId] = [...currentStageTips];
+      state.campaign.revealedTips = revealedTips;
+      return state;
     }
 
     if (action === "guide-undo") {
@@ -1254,14 +1319,51 @@ module.exports = class LibraryRun1Runtime extends BaseGame {
       }
 
       pushHistory(state);
+      if (state.story.sceneId === "tutorial-pre" && state.story.index === 0 && !state.campaign.mode) {
+        state.phase = "MODE_SELECT";
+        state.modeSelectResume = {
+          sceneId: "tutorial-pre",
+          index: 1,
+        };
+        state.battle = null;
+        return state;
+      }
       if (state.story.index < state.story.pages.length - 1) {
         state.story.index += 1;
+        state.storyBackground = getStoryPageBackground(
+          state.story.pages[state.story.index],
+          state.storyBackground || "default"
+        );
       } else {
         moveToFlow(state, state.flowIndex + 1);
         if (state.phase === "BATTLE") {
           addLog(state, "system", "剧情结束，进入战斗。");
         }
       }
+      return state;
+    }
+
+    if (action === "select-mode") {
+      if (state.phase !== "MODE_SELECT") {
+        return state;
+      }
+      if (!(data?.mode === "story" || data?.mode === "challenge")) {
+        return state;
+      }
+      state.campaign.mode = data.mode;
+      if (state.modeSelectResume) {
+        state.phase = "STORY";
+        state.story = buildStoryState(state.modeSelectResume.sceneId);
+        state.story.index = state.modeSelectResume.index;
+        state.storyBackground = getStoryPageBackground(
+          state.story.pages[state.story.index],
+          state.storyBackground || "default"
+        );
+        state.modeSelectResume = null;
+      } else {
+        moveToFlow(state, state.flowIndex + 1);
+      }
+      state.history = [];
       return state;
     }
 
@@ -1342,6 +1444,117 @@ module.exports = class LibraryRun1Runtime extends BaseGame {
 
       clearTurnEndBuffs(state);
       state.battle.status = "PLAYER_TURN";
+      addLog(state, "system", `第 ${state.battle.turn} 回合开始。`);
+      return state;
+    }
+
+    if (action === "space-reorg") {
+      if (state.phase !== "BATTLE" || state.battle.status !== "PLAYER_TURN" || state.battle.pendingEnemyAction) {
+        return state;
+      }
+
+      const caster = findUnit(state.battle, data?.casterId);
+      const source = findUnit(state.battle, data?.sourceId);
+      const target = findUnit(state.battle, data?.targetId);
+      const amount = Number(data?.amount);
+      const skill = getUnitActiveSkill(caster, "space-reorg");
+
+      if (!skill || hasUsedActiveSkill(state, skill.key)) {
+        return state;
+      }
+
+      if (
+        !canPlayerCommand(caster)
+        || !source?.alive
+        || !target?.alive
+        || source.id === target.id
+        || getControlSide(source) !== "player"
+      ) {
+        return state;
+      }
+
+      const maxTransfer = Math.min(source.power, 9 - target.power);
+      if (!Number.isInteger(amount) || amount < 1 || amount > maxTransfer) {
+        return state;
+      }
+
+      pushHistory(state);
+
+      source.power -= amount;
+      target.power += amount;
+      state.battle.activeSkillUsage[skill.key] = true;
+
+      addLog(state, "skill", `${caster.name} 发动【${skill.label}】。`, {
+        unitId: caster.id,
+        sourceUnitId: source.id,
+        targetUnitId: target.id,
+        amount,
+      });
+      addLog(state, "hook", `${source.name} 向 ${target.name} 转移了 ${amount} 点 POWER。`, {
+        unitId: source.id,
+        targetUnitId: target.id,
+        amount,
+      });
+
+      enforcePowerBounds(state, source, { cause: "space-reorg", sourceUnitId: caster.id });
+      enforcePowerBounds(state, target, { cause: "space-reorg", sourceUnitId: caster.id });
+      evaluateBattleState(state, "space-reorg");
+      return state;
+    }
+
+    if (action === "time-elapse") {
+      if (state.phase !== "BATTLE" || state.battle.status !== "PLAYER_TURN" || state.battle.pendingEnemyAction) {
+        return state;
+      }
+
+      const caster = findUnit(state.battle, data?.casterId);
+      const skill = getUnitActiveSkill(caster, "time-elapse");
+
+      if (!skill || !canPlayerCommand(caster) || !caster?.alive) {
+        return state;
+      }
+
+      pushHistory(state);
+
+      addLog(state, "skill", `${caster.name} 发动【${skill.label}】。`, {
+        unitId: caster.id,
+      });
+      state.battle.activeSkillUsage[skill.key] = true;
+
+      if (state.battle.enemyAi === "stage2-rotation-defense") {
+        const currentIndex = state.battle.stageRuntime?.rotationIndex || 0;
+        const previewState = clone(state);
+        previewState.battle.stageRuntime = previewState.battle.stageRuntime || {};
+        previewState.battle.stageRuntime.rotationIndex = currentIndex;
+        const preview = resolveEnemyAction(previewState.battle.enemyAi, buildEnemyAiContext(previewState));
+        const skippedAttackerId = preview?.action?.attackerId || null;
+
+        state.battle.stageRuntime = state.battle.stageRuntime || {};
+        state.battle.stageRuntime.rotationIndex = previewState.battle.stageRuntime?.rotationIndex ?? ((currentIndex + 1) % 3);
+        state.battle.stageRuntime.timeElapseSkippedUnitId = skippedAttackerId;
+
+        if (skippedAttackerId) {
+          const skippedUnit = findUnit(state.battle, skippedAttackerId);
+          addLog(state, "hook", `时间流逝跳过了 ${skippedUnit?.name || "该单位"} 的回合。`, {
+            unitId: skippedAttackerId,
+            sourceUnitId: caster.id,
+          });
+        }
+      }
+
+      state.battle.turn += 1;
+      syncVirusActivation(state);
+      clearTurnEndBuffs(state);
+      state.battle.pendingEnemyAction = null;
+      state.battle.status = "PLAYER_TURN";
+
+      if (evaluateBattleState(state, "time-elapse")) {
+        if (state.finalResults) {
+          this.end(state.finalResults);
+        }
+        return state;
+      }
+
       addLog(state, "system", `第 ${state.battle.turn} 回合开始。`);
       return state;
     }

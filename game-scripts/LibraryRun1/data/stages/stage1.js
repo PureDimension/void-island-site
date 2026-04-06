@@ -12,7 +12,16 @@ const stage1 = {
   enemyAi: "stage1-passive-defense",
   lineup: {
     playerUnits: [
-      { template: "robot", id: "p-robot", slot: 2, side: "player" },
+      {
+        template: "robot",
+        templateByMode: {
+          story: "robot-stage1-story",
+          challenge: "robot",
+        },
+        id: "p-robot",
+        slot: 2,
+        side: "player",
+      },
       { template: "battle-module", id: "p-battle-module", slot: 4, side: "player" },
       { template: "emp-module", id: "p-emp-module", slot: 6, side: "player" },
       { template: "growth-module", id: "p-growth-module", slot: 8, side: "player" },

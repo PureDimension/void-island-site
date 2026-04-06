@@ -96,6 +96,7 @@ function defineUnit(config) {
   return {
     ...config,
     tags: config.tags || [],
+    activeSkills: config.activeSkills || [],
     display: { ...STANDARD_DISPLAY, ...(config.display || {}) },
     hooks: mergeHooks(config.hooks),
     viewHooks: {
@@ -112,18 +113,42 @@ const UNIT_CATALOG = {
   robot: defineUnit({
     name: "【影子】",
     power: 3,
-    description: "◆【显现】：整场游戏所有关卡仅一次。仅当本单位主动攻击时，可将本次战斗中的 POWER 视为 1-9 的指定值。若本单位被摧毁，则游戏失败。",
+    description: "若本单位被摧毁，则游戏失败。",
+    tags: [],
+  }),
+  "robot-stage1-story": defineUnit({
+    name: "【影子】",
+    power: 3,
+    description: "◆【空间重组】：每关限一次。选择一个己方单位和一个其他单位，将前者的部分 POWER 转移给后者。若本单位被摧毁，则游戏失败。",
     tags: ["◆"],
-    hooks: {
-      modifyCombatPower: [
-        (runtime, state, { self, attacker, currentPower, overloadPower }) => {
-          if (self.id === attacker.id && overloadPower !== null) {
-            return overloadPower;
-          }
-          return currentPower;
-        },
-      ],
-    },
+    activeSkills: [
+      {
+        key: "space-reorg",
+        label: "空间重组",
+        style: "hive",
+        oncePerStage: true,
+      },
+    ],
+  }),
+  "robot-stage2-story": defineUnit({
+    name: "【影子】",
+    power: 3,
+    description: "◆【空间重组】：每关限一次。选择一个己方单位和一个其他单位，将前者的部分 POWER 转移给后者。◆【时间流逝】：每关限一次。直接跳过当前回合，并使得敌人的行动顺序轮换一位。若本单位被摧毁，则游戏失败。",
+    tags: ["◆"],
+    activeSkills: [
+      {
+        key: "space-reorg",
+        label: "空间重组",
+        style: "hive",
+        oncePerStage: true,
+      },
+      {
+        key: "time-elapse",
+        label: "时间流逝",
+        style: "clock",
+        oncePerStage: false,
+      },
+    ],
   }),
   waterbell: defineUnit({
     name: "【水铃儿】",
