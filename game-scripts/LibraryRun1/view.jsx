@@ -106,6 +106,9 @@ function useHideMusicPlayer() {
 
 function useStageMusic(gameState) {
   const audioRef = useRef(null);
+  const sampleRef = useRef(null);
+  const musicFxRef = useRef(null);
+  const suppressNextNoticeRef = useRef(false);
   const [enabled, setEnabled] = useState(true);
   const [isPlaying, setIsPlaying] = useState(false);
   const [notice, setNotice] = useState(null);
@@ -126,11 +129,26 @@ function useStageMusic(gameState) {
     }
 
     let cancelled = false;
+    if (musicFxRef.current) {
+      clearInterval(musicFxRef.current);
+      musicFxRef.current = null;
+    }
     audio.pause();
     audio.currentTime = 0;
     audio.src = buildAssetUrl(track.fileName);
     audio.loop = true;
     audio.preload = "auto";
+    audio.volume = 1;
+    audio.playbackRate = 1;
+    if ("preservesPitch" in audio) {
+      audio.preservesPitch = false;
+    }
+    if ("mozPreservesPitch" in audio) {
+      audio.mozPreservesPitch = false;
+    }
+    if ("webkitPreservesPitch" in audio) {
+      audio.webkitPreservesPitch = false;
+    }
 
     const tryPlay = () => {
       if (!enabled) {
@@ -147,7 +165,11 @@ function useStageMusic(gameState) {
               return;
             }
             setIsPlaying(true);
-            setNotice(track);
+            if (suppressNextNoticeRef.current) {
+              suppressNextNoticeRef.current = false;
+            } else {
+              setNotice(track);
+            }
           })
           .catch(() => {
             if (cancelled) {
@@ -157,7 +179,11 @@ function useStageMusic(gameState) {
           });
       } else {
         setIsPlaying(!audio.paused);
-        setNotice(track);
+        if (suppressNextNoticeRef.current) {
+          suppressNextNoticeRef.current = false;
+        } else {
+          setNotice(track);
+        }
       }
     };
 
@@ -214,25 +240,95 @@ function useStageMusic(gameState) {
       playPromise
         .then(() => {
           setIsPlaying(true);
-          setNotice(track);
+          if (suppressNextNoticeRef.current) {
+            suppressNextNoticeRef.current = false;
+          } else {
+            setNotice(track);
+          }
         })
         .catch(() => {
           setIsPlaying(false);
         });
     } else {
       setIsPlaying(true);
-      setNotice(track);
+      if (suppressNextNoticeRef.current) {
+        suppressNextNoticeRef.current = false;
+      } else {
+        setNotice(track);
+      }
+    }
+  };
+
+  const playSample = (trackKey) => {
+    const sample = sampleRef.current;
+    if (!sample || !enabled || !trackKey) {
+      return;
+    }
+    suppressNextNoticeRef.current = true;
+    sample.pause();
+    sample.currentTime = 0;
+    sample.src = buildAssetUrl(`${trackKey}.mp3`);
+    sample.preload = "auto";
+    sample.volume = 0.95;
+    sample.play().catch(() => {});
+  };
+
+  const runPageMusicEffect = (effect) => {
+    const audio = audioRef.current;
+    if (!audio || !enabled || !effect) {
+      return;
+    }
+    if (effect === "fade-out-slow" || effect === "slow-fade-out-long") {
+      if (musicFxRef.current) {
+        clearInterval(musicFxRef.current);
+        musicFxRef.current = null;
+      }
+      const startVolume = audio.volume;
+      const startRate = audio.playbackRate || 1;
+      const shouldSlowRate = effect === "slow-fade-out-long";
+      const durationMs = shouldSlowRate ? 2600 : 2200;
+      const startedAt = Date.now();
+      if (shouldSlowRate) {
+        if ("preservesPitch" in audio) {
+          audio.preservesPitch = false;
+        }
+        if ("mozPreservesPitch" in audio) {
+          audio.mozPreservesPitch = false;
+        }
+        if ("webkitPreservesPitch" in audio) {
+          audio.webkitPreservesPitch = false;
+        }
+      }
+      musicFxRef.current = setInterval(() => {
+        const raw = Math.min((Date.now() - startedAt) / durationMs, 1);
+        const eased = easeInOutCubic(raw);
+        audio.playbackRate = shouldSlowRate
+          ? startRate - (startRate - 0.64) * eased
+          : startRate;
+        audio.volume = Math.max(0, startVolume * (1 - eased));
+        if (raw >= 1) {
+          clearInterval(musicFxRef.current);
+          musicFxRef.current = null;
+          audio.pause();
+          audio.volume = 0;
+          audio.playbackRate = 1;
+          setIsPlaying(false);
+        }
+      }, 40);
     }
   };
 
   return {
     audioRef,
+    sampleRef,
     enabled,
     isPlaying,
     notice,
     setNotice,
-    track,
-    toggle,
+      track,
+      toggle,
+      playSample,
+    runPageMusicEffect,
   };
 }
 
@@ -270,19 +366,55 @@ function useBattleViewport(rootRef, enabled) {
   }, [enabled, rootRef]);
 }
 
-function StoryView({ gameState, onAction }) {
+function StoryView({ gameState, onAction, music }) {
   const sceneId = gameState.story.sceneId;
   const pageIndex = gameState.story.index;
   const page = gameState.story.pages[pageIndex];
   const [revealedCount, setRevealedCount] = useState(1);
+  const [entryFx, setEntryFx] = useState(null);
+  const entryKey = `${sceneId}:${pageIndex}`;
+  const lastEntryFxKeyRef = useRef(null);
+  const lastPageEffectKeyRef = useRef(null);
 
   useEffect(() => {
     setRevealedCount(1);
   }, [sceneId, pageIndex]);
 
+  useEffect(() => {
+    const effectKey = `${entryKey}:${page.musicEffect || "none"}:${page.sampleTrack || "none"}`;
+    if (lastPageEffectKeyRef.current === effectKey) {
+      return;
+    }
+    if (page.musicEffect) {
+      music?.runPageMusicEffect?.(page.musicEffect);
+    }
+    if (page.sampleTrack) {
+      music?.playSample?.(page.sampleTrack);
+    }
+    lastPageEffectKeyRef.current = effectKey;
+  }, [entryKey, music, page.musicEffect, page.sampleTrack]);
+
+  useEffect(() => {
+    if (page.entryTransition !== "blood-entry") {
+      setEntryFx(null);
+      return undefined;
+    }
+    if (lastEntryFxKeyRef.current === entryKey) {
+      setEntryFx(null);
+      return undefined;
+    }
+    lastEntryFxKeyRef.current = entryKey;
+    setEntryFx("blood-entry");
+    const timer = setTimeout(() => setEntryFx(null), 900);
+    return () => clearTimeout(timer);
+  }, [entryKey, page.entryTransition]);
+
   const done = revealedCount >= page.paragraphs.length;
 
   const handleAdvance = () => {
+    if (entryFx) {
+      return;
+    }
     if (!done) {
       setRevealedCount((value) => Math.min(value + 1, page.paragraphs.length));
       return;
@@ -294,10 +426,11 @@ function StoryView({ gameState, onAction }) {
     <>
       <div className="story-shell" onClick={handleAdvance} role="button" tabIndex={0}>
         <div className="story-noise" />
+        {entryFx === "blood-entry" ? <div className="story-entry-bloodflash" /> : null}
         <div className={`story-page ${page.tone === "unlock-red" ? "tone-red" : ""}`.trim()}>
           <div className="story-index">{String(pageIndex + 1).padStart(2, "0")}</div>
           <div className="story-body">
-            {page.paragraphs.slice(0, revealedCount).map((paragraph, index) => (
+            {page.paragraphs.slice(0, entryFx ? 0 : revealedCount).map((paragraph, index) => (
               <p key={`${pageIndex}-${index}`} className="story-paragraph fade-in">
                 {paragraph}
               </p>
@@ -1962,6 +2095,7 @@ export default function LibraryRun1View({ gameState, onAction }) {
         ))}
       </div>
       <audio ref={music.audioRef} hidden />
+      <audio ref={music.sampleRef} hidden />
       <div className="battle-toolbar">
         {!isStoryPhase && !isModeSelectPhase ? (
           <>
@@ -2017,7 +2151,7 @@ export default function LibraryRun1View({ gameState, onAction }) {
       ) : null}
 
       {isStoryPhase ? (
-        <StoryView gameState={gameState} onAction={onAction} />
+        <StoryView gameState={gameState} onAction={onAction} music={music} />
       ) : isModeSelectPhase ? (
         <ModeSelectOverlay onPick={(mode) => onAction("select-mode", { mode })} />
       ) : (
@@ -2282,28 +2416,34 @@ function StyleBlock() {
 
       .story-backdrop-blood-dark {
         background:
-          radial-gradient(circle at 18% 24%, rgba(66, 5, 9, 0.84) 0 10%, transparent 18%),
-          radial-gradient(circle at 72% 16%, rgba(54, 6, 9, 0.72) 0 8%, transparent 15%),
-          radial-gradient(circle at 56% 66%, rgba(72, 8, 11, 0.78) 0 14%, transparent 23%),
+          radial-gradient(ellipse 34% 26% at 18% 24%, rgba(66, 5, 9, 0.88) 0 38%, rgba(66, 5, 9, 0.62) 49%, transparent 68%),
+          radial-gradient(ellipse 22% 18% at 71% 18%, rgba(54, 6, 9, 0.74) 0 34%, rgba(54, 6, 9, 0.46) 46%, transparent 64%),
+          radial-gradient(ellipse 30% 24% at 58% 68%, rgba(72, 8, 11, 0.82) 0 36%, rgba(72, 8, 11, 0.54) 50%, transparent 69%),
+          radial-gradient(ellipse 18% 12% at 38% 56%, rgba(49, 4, 8, 0.7) 0 32%, transparent 58%),
+          conic-gradient(from 128deg at 24% 23%, transparent 0 15%, rgba(50, 4, 7, 0.42) 15% 28%, transparent 28% 100%),
+          conic-gradient(from -36deg at 58% 68%, transparent 0 18%, rgba(58, 5, 9, 0.38) 18% 30%, transparent 30% 100%),
           linear-gradient(180deg, rgba(25, 3, 7, 0.96), rgba(12, 2, 5, 0.98));
         animation: blood-layer-dark 540ms ease forwards;
       }
 
       .story-backdrop-blood-mid {
         background:
-          radial-gradient(circle at 22% 26%, rgba(161, 22, 30, 0.48) 0 14%, transparent 22%),
-          radial-gradient(circle at 78% 18%, rgba(173, 28, 36, 0.42) 0 11%, transparent 18%),
-          radial-gradient(circle at 58% 70%, rgba(184, 32, 38, 0.4) 0 17%, transparent 24%),
-          radial-gradient(circle at 36% 58%, rgba(158, 24, 31, 0.26) 0 10%, transparent 18%);
+          radial-gradient(ellipse 36% 28% at 21% 26%, rgba(161, 22, 30, 0.56) 0 36%, rgba(161, 22, 30, 0.34) 50%, transparent 68%),
+          radial-gradient(ellipse 24% 18% at 79% 20%, rgba(173, 28, 36, 0.46) 0 34%, rgba(173, 28, 36, 0.28) 46%, transparent 63%),
+          radial-gradient(ellipse 34% 26% at 59% 71%, rgba(184, 32, 38, 0.44) 0 37%, rgba(184, 32, 38, 0.26) 50%, transparent 67%),
+          radial-gradient(ellipse 20% 16% at 40% 60%, rgba(158, 24, 31, 0.32) 0 34%, transparent 60%),
+          conic-gradient(from 92deg at 20% 28%, transparent 0 12%, rgba(210, 40, 48, 0.26) 12% 24%, transparent 24% 100%),
+          conic-gradient(from -18deg at 56% 70%, transparent 0 14%, rgba(220, 54, 56, 0.2) 14% 27%, transparent 27% 100%);
         animation: blood-layer-mid 620ms ease 220ms forwards;
       }
 
       .story-backdrop-blood-bright {
         background:
-          radial-gradient(circle at 24% 28%, rgba(255, 74, 74, 0.34) 0 15%, transparent 22%),
-          radial-gradient(circle at 80% 20%, rgba(255, 88, 88, 0.28) 0 12%, transparent 18%),
-          radial-gradient(circle at 60% 72%, rgba(255, 92, 92, 0.3) 0 18%, transparent 24%),
-          radial-gradient(circle at 40% 60%, rgba(255, 110, 110, 0.16) 0 12%, transparent 18%);
+          radial-gradient(ellipse 38% 30% at 24% 28%, rgba(255, 78, 78, 0.38) 0 34%, rgba(255, 78, 78, 0.16) 48%, transparent 66%),
+          radial-gradient(ellipse 26% 18% at 80% 20%, rgba(255, 96, 96, 0.3) 0 33%, rgba(255, 96, 96, 0.14) 45%, transparent 62%),
+          radial-gradient(ellipse 34% 28% at 61% 73%, rgba(255, 92, 92, 0.34) 0 35%, rgba(255, 92, 92, 0.15) 49%, transparent 66%),
+          radial-gradient(ellipse 18% 14% at 39% 60%, rgba(255, 118, 118, 0.18) 0 33%, transparent 58%),
+          conic-gradient(from 140deg at 25% 28%, transparent 0 14%, rgba(255, 166, 166, 0.14) 14% 26%, transparent 26% 100%);
         animation: blood-layer-bright 660ms ease 460ms forwards;
       }
 
@@ -2346,6 +2486,24 @@ function StyleBlock() {
         }
       }
 
+      @keyframes story-blood-entry {
+        0% {
+          opacity: 0;
+          transform: scale(1.02);
+          filter: saturate(1.4) brightness(1.2);
+        }
+        28% {
+          opacity: 1;
+          transform: scale(1);
+          filter: saturate(1.16) brightness(1.1);
+        }
+        100% {
+          opacity: 0;
+          transform: scale(1);
+          filter: saturate(0.96) brightness(0.92);
+        }
+      }
+
       .story-noise {
         position: absolute;
         inset: 0;
@@ -2355,6 +2513,19 @@ function StyleBlock() {
           linear-gradient(rgba(110, 226, 255, 0.05) 1px, transparent 1px),
           linear-gradient(90deg, rgba(110, 226, 255, 0.05) 1px, transparent 1px);
         background-size: 44px 44px;
+      }
+
+      .story-entry-bloodflash {
+        position: absolute;
+        inset: 0;
+        pointer-events: none;
+        z-index: 3;
+        background:
+          radial-gradient(ellipse 40% 32% at 22% 28%, rgba(255, 116, 116, 0.9) 0 24%, rgba(255, 66, 66, 0.72) 42%, transparent 70%),
+          radial-gradient(ellipse 34% 26% at 74% 20%, rgba(255, 88, 88, 0.82) 0 24%, rgba(220, 28, 28, 0.6) 40%, transparent 66%),
+          radial-gradient(ellipse 38% 30% at 60% 70%, rgba(255, 44, 44, 0.68) 0 22%, rgba(186, 12, 18, 0.42) 42%, transparent 68%),
+          linear-gradient(180deg, rgba(255, 16, 16, 0.92), rgba(125, 6, 12, 0.88));
+        animation: story-blood-entry 900ms ease forwards;
       }
 
       .story-page {

@@ -1143,14 +1143,8 @@ function evaluateBattleState(state, triggerSource) {
       return true;
     }
 
-    state.phase = "VICTORY";
     uniquePush(state.campaign.clearedStages, STAGE_2_ID);
-    thisEnd(state, {
-      outcome: "victory",
-      stageId: STAGE_2_ID,
-      survivors: sortBySlot(alivePlayerUnits(state)).map((unit) => unit.id),
-      triggerSource,
-    });
+    moveToFlow(state, state.flowIndex + 1);
     return true;
   }
 
