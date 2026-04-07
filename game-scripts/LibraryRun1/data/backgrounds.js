@@ -22,6 +22,16 @@ const STORY_BACKGROUND_PRESETS = {
       { className: "story-backdrop story-backdrop-blood-bright" },
     ],
   },
+  infinity: {
+    key: "infinity",
+    rootClassName: "story-bg-infinity",
+    layers: [
+      { className: "story-backdrop story-backdrop-infinity-base" },
+      { className: "story-backdrop story-backdrop-infinity-waves-a" },
+      { className: "story-backdrop story-backdrop-infinity-waves-b" },
+      { className: "story-backdrop story-backdrop-infinity-sigil" },
+    ],
+  },
 };
 
 function normalizeBackgroundInput(input) {

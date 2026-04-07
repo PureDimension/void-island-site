@@ -2487,6 +2487,69 @@ function StyleBlock() {
         color: rgba(255, 196, 196, 0.78);
       }
 
+      .story-backdrop-infinity-base,
+      .story-backdrop-infinity-waves-a,
+      .story-backdrop-infinity-waves-b,
+      .story-backdrop-infinity-sigil {
+        opacity: 1;
+      }
+
+      .story-backdrop-infinity-base {
+        background:
+          radial-gradient(circle at 18% 22%, rgba(255, 230, 140, 0.18), transparent 24%),
+          radial-gradient(circle at 78% 18%, rgba(255, 215, 110, 0.16), transparent 22%),
+          radial-gradient(circle at 72% 72%, rgba(242, 188, 78, 0.15), transparent 26%),
+          linear-gradient(180deg, rgba(37, 28, 8, 0.92), rgba(16, 12, 3, 0.96));
+      }
+
+      .story-backdrop-infinity-waves-a {
+        background:
+          radial-gradient(circle at 14% 24%, rgba(255, 244, 202, 0.2) 0 6%, rgba(255, 224, 138, 0.13) 11%, rgba(255, 214, 120, 0.06) 18%, transparent 34%),
+          radial-gradient(circle at 74% 66%, rgba(255, 248, 216, 0.18) 0 5%, rgba(255, 224, 138, 0.12) 10%, rgba(255, 214, 120, 0.05) 17%, transparent 32%),
+          radial-gradient(circle at 42% 44%, rgba(255, 242, 192, 0.12) 0 4%, rgba(255, 212, 104, 0.07) 8%, transparent 18%),
+          linear-gradient(90deg, transparent 0%, rgba(255, 232, 156, 0.06) 24%, rgba(255, 241, 198, 0.11) 48%, rgba(255, 223, 128, 0.07) 72%, transparent 100%);
+        mix-blend-mode: screen;
+        filter: blur(12px);
+        animation: infinity-wave-drift-a 18s ease-in-out infinite alternate;
+      }
+
+      .story-backdrop-infinity-waves-b {
+        background:
+          radial-gradient(circle at 72% 24%, rgba(255, 248, 218, 0.16) 0 4%, rgba(255, 224, 138, 0.11) 9%, rgba(255, 208, 98, 0.05) 16%, transparent 28%),
+          radial-gradient(circle at 24% 76%, rgba(255, 248, 218, 0.18) 0 5%, rgba(255, 226, 142, 0.12) 10%, rgba(255, 208, 98, 0.05) 18%, transparent 30%),
+          radial-gradient(circle at 56% 52%, rgba(255, 244, 198, 0.1) 0 4%, rgba(255, 214, 112, 0.06) 9%, transparent 18%),
+          linear-gradient(90deg, transparent 0%, rgba(255, 243, 208, 0.04) 20%, rgba(255, 219, 116, 0.08) 50%, rgba(255, 241, 198, 0.05) 80%, transparent 100%);
+        mix-blend-mode: screen;
+        filter: blur(22px);
+        animation: infinity-wave-drift-b 22s ease-in-out infinite alternate;
+      }
+
+      .story-backdrop-infinity-sigil {
+        background:
+          radial-gradient(circle at 50% 50%, rgba(255, 234, 168, 0.2), rgba(255, 214, 112, 0.1) 26%, transparent 46%),
+          url('/api/library-run1-image/infinity');
+        background-repeat: no-repeat, no-repeat;
+        background-position: center, center;
+        background-size: 54vmin 54vmin, 27vmin 27vmin;
+        mix-blend-mode: screen;
+        opacity: 0.82;
+        filter: drop-shadow(0 0 22px rgba(255, 223, 132, 0.22)) drop-shadow(0 0 54px rgba(255, 208, 92, 0.14));
+        animation: infinity-sigil-breathe 7.4s ease-in-out infinite;
+      }
+
+      .library-run-root.story-bg-infinity .story-index {
+        color: rgba(255, 231, 176, 0.62);
+      }
+
+      .library-run-root.story-bg-infinity .story-paragraph {
+        color: rgba(255, 246, 228, 0.96);
+        text-shadow: 0 0 16px rgba(255, 224, 132, 0.06);
+      }
+
+      .library-run-root.story-bg-infinity .story-hint {
+        color: rgba(255, 229, 170, 0.78);
+      }
+
       @keyframes blood-layer-dark {
         from {
           opacity: 0;
@@ -2511,6 +2574,59 @@ function StyleBlock() {
         }
         to {
           opacity: 1;
+        }
+      }
+
+      @keyframes infinity-wave-drift-a {
+        0% {
+          transform: translate3d(-10%, -2%, 0) scale(1.03);
+          opacity: 0.78;
+        }
+        25% {
+          transform: translate3d(-3%, 1.2%, 0) scale(1.06);
+          opacity: 0.96;
+        }
+        55% {
+          transform: translate3d(5%, -0.8%, 0) scale(1.04);
+          opacity: 0.84;
+        }
+        100% {
+          transform: translate3d(12%, 2%, 0) scale(1.08);
+          opacity: 0.94;
+        }
+      }
+
+      @keyframes infinity-wave-drift-b {
+        0% {
+          transform: translate3d(14%, -1%, 0) scale(1.04);
+          opacity: 0.68;
+        }
+        35% {
+          transform: translate3d(6%, 1.8%, 0) scale(1.08);
+          opacity: 0.88;
+        }
+        70% {
+          transform: translate3d(-5%, -1.2%, 0) scale(1.05);
+          opacity: 0.74;
+        }
+        100% {
+          transform: translate3d(-14%, 2.5%, 0) scale(1.09);
+          opacity: 0.9;
+        }
+      }
+
+      @keyframes infinity-sigil-breathe {
+        0% {
+          transform: scale(0.978);
+          opacity: 0.72;
+        }
+        50% {
+          transform: scale(1.03);
+          opacity: 0.86;
+        }
+        100% {
+          transform: scale(0.986);
+          opacity: 0.75;
         }
       }
 
