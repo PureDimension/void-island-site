@@ -119,7 +119,7 @@ const UNIT_CATALOG = {
   "robot-stage1-story": defineUnit({
     name: "【影子】",
     power: 3,
-    description: "◆【空间重组】：每关限一次。选择一个己方单位和一个其他单位，将前者的部分 POWER 转移给后者。若本单位被摧毁，则游戏失败。",
+    description: "◆【空间重组】：每关限一次。选择一个己方单位和一个其他单位，将前者的部分 POWER 与其身上的 BUFF 一并转移给后者。若本单位被摧毁，则游戏失败。",
     tags: ["◆"],
     activeSkills: [
       {
@@ -133,7 +133,7 @@ const UNIT_CATALOG = {
   "robot-stage2-story": defineUnit({
     name: "【影子】",
     power: 3,
-    description: "◆【空间重组】：每关限一次。选择一个己方单位和一个其他单位，将前者的部分 POWER 转移给后者。◆【时间流逝】：每关限一次。直接跳过当前回合，并使得敌人的行动顺序轮换一位。若本单位被摧毁，则游戏失败。",
+    description: "◆【空间重组】：每关限一次。选择一个己方单位和一个其他单位，将前者的部分 POWER 与其身上的 BUFF 一并转移给后者。◆【时间流逝】：每关限一次。仅可在敌方行动前的 CONFIRM 阶段发动。取消敌方本轮行动及其全部后果，并直接进入下一个己方回合。若本单位被摧毁，则游戏失败。",
     tags: ["◆"],
     activeSkills: [
       {
@@ -146,7 +146,7 @@ const UNIT_CATALOG = {
         key: "time-elapse",
         label: "时间流逝",
         style: "clock",
-        oncePerStage: false,
+        oncePerStage: true,
       },
     ],
   }),

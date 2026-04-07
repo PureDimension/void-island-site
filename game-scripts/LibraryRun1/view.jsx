@@ -1154,6 +1154,32 @@ function SidePanel({
   const buffDescriptions = modelGetBuffDescriptions(selectedUnit);
   const abilityContextEntries = modelGetAbilityContextEntries(selectedUnit, battle);
   const activeSkills = modelGetUnitActiveSkills(selectedUnit, battle);
+  const canUseTimeElapseNow = !!(
+    enemyConfirm
+    && enemyConfirm.sequenceOwner !== "player"
+    && !(enemyConfirm.kind === "gateway-sequence" && enemyConfirm.phase === "support")
+  );
+  const getSkillBadgeText = (skill) => {
+    if (skill.used) {
+      return "已发动";
+    }
+    if (skill.key === "time-elapse" && !canUseTimeElapseNow) {
+      return "只能在敌方攻击回合发动";
+    }
+    return "可发动";
+  };
+  const isSkillDisabled = (skill) => {
+    if (skillLocked) {
+      return true;
+    }
+    if (skill.oncePerStage && skill.used) {
+      return true;
+    }
+    if (skill.key === "time-elapse") {
+      return !canUseTimeElapseNow;
+    }
+    return !!enemyConfirm;
+  };
   const descriptionLines = useMemo(() => {
     const text = selectedUnit?.description || "";
     if (!text) {
@@ -1236,10 +1262,10 @@ function SidePanel({
                       type="button"
                       className={`mini-button skill-button ${skill.used ? "used" : "strong"}`}
                       onClick={() => onUseActiveSkill?.(skill)}
-                      disabled={(skill.oncePerStage && skill.used) || skillLocked}
+                      disabled={isSkillDisabled(skill)}
                     >
                       <span>{skill.label}</span>
-                      <span className="skill-badge">{skill.used ? "已发动" : "可发动"}</span>
+                      <span className="skill-badge">{getSkillBadgeText(skill)}</span>
                     </button>
                   ))}
                 </div>
@@ -1459,9 +1485,9 @@ export default function LibraryRun1View({ gameState, onAction }) {
       dragPointerRef.current = null;
       const sourceUnit = allUnits.find((unit) => unit.id === spaceReorg.sourceId);
       const targetUnit = findPointerUnit(event.clientX, event.clientY);
-      const maxTransfer = Math.min(sourceUnit?.power || 0, 9 - (targetUnit?.power || 0));
+      const maxTransfer = Math.max(0, sourceUnit?.power || 0);
 
-      if (!(targetUnit && targetUnit.id !== spaceReorg.sourceId && targetUnit.alive && maxTransfer >= 1)) {
+      if (!(targetUnit && targetUnit.id !== spaceReorg.sourceId && targetUnit.alive && maxTransfer >= 0)) {
         setSpaceReorg((current) => current ? {
           ...current,
           dragging: false,
@@ -1483,13 +1509,13 @@ export default function LibraryRun1View({ gameState, onAction }) {
         targetId: targetUnit.id,
         chain,
         dragChain: null,
-        amountMin: 1,
+        amountMin: 0,
         amountMax: maxTransfer,
-        amountValue: Math.min(Math.max(current.amountValue || 1, 1), maxTransfer),
+        amountValue: Math.min(Math.max(current.amountValue ?? 0, 0), maxTransfer),
         message: "请选择要转移的 POWER 数值。",
         onAmountChange: (value) => setSpaceReorg((latest) => latest ? {
           ...latest,
-          amountValue: Math.min(Math.max(value, 1), maxTransfer),
+          amountValue: Math.min(Math.max(value, 0), maxTransfer),
         } : latest),
         onAmount: (value) => executeSpaceReorg({
           ...current,
@@ -1676,6 +1702,12 @@ export default function LibraryRun1View({ gameState, onAction }) {
   const confirmControllerSide = enemyConfirm?.controllerSide || null;
   const confirmAttackerId = enemyConfirm?.attackerId || null;
   const confirmDefenderId = enemyConfirm?.defenderId || null;
+  const canUseTimeElapseInConfirm = !!(
+    enemyConfirm
+    && battle?.status === "ENEMY_CONFIRM"
+    && enemyConfirm.sequenceOwner !== "player"
+    && !(enemyConfirm.kind === "gateway-sequence" && enemyConfirm.phase === "support")
+  );
 
   const buildConnection = (sourceId, targetId) => {
     if (!(sourceId && targetId)) {
@@ -1822,10 +1854,10 @@ export default function LibraryRun1View({ gameState, onAction }) {
       targetId: null,
       chain: null,
       dragging: false,
-      amountMin: 1,
-      amountMax: 1,
-      amountValue: 1,
-      message: "请从需要减少 POWER 的单位拖向需要增加 POWER 的单位。",
+      amountMin: 0,
+      amountMax: 0,
+      amountValue: 0,
+      message: "请从需要减少 POWER 的己方单位拖向需要增加 POWER 的其他单位。",
       dragChain: null,
       sourceFloat: null,
       targetFloat: null,
@@ -1840,7 +1872,7 @@ export default function LibraryRun1View({ gameState, onAction }) {
   };
 
   const beginTimeElapse = (skill) => {
-      if (!(skill && battle?.status === "PLAYER_TURN" && !enemyConfirm) || timeElapseFx?.active) {
+      if (!(skill && canUseTimeElapseInConfirm) || timeElapseFx?.active) {
         return;
       }
     clearSkillTimers();
@@ -1968,7 +2000,7 @@ export default function LibraryRun1View({ gameState, onAction }) {
       dragChain: buildConnectionToPoint(unit.id, event.clientX, event.clientY),
       dragging: true,
       phase: "dragging",
-      message: "拖到需要增加 POWER 的己方单位上，松开即可完成连接。",
+      message: "拖到需要增加 POWER 的其他单位上，松开即可完成连接。",
     } : current);
   };
 
@@ -2275,7 +2307,7 @@ export default function LibraryRun1View({ gameState, onAction }) {
                   beginTimeElapse(skill);
                 }
               }}
-                skillLocked={!!spaceReorg?.active || !!timeElapseFx?.active || !!enemyConfirm}
+                skillLocked={!!spaceReorg?.active || !!timeElapseFx?.active}
                 guideStep={guideStep}
               />
           </div>

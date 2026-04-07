@@ -506,6 +506,46 @@ function clearBuff(state, buffKey, unit, options = {}) {
   return true;
 }
 
+function transferUnitBuffs(state, source, target, caster = null) {
+  if (!(source && target && source.alive && target.alive) || source.id === target.id) {
+    return;
+  }
+
+  for (const buff of Object.values(BUFF_CATALOG)) {
+    const count = source.buffs?.[buff.key] || 0;
+    if (count <= 0) {
+      continue;
+    }
+
+    if (buff.key === EMP_BUFF) {
+      source.buffs[buff.key] = 0;
+      source.power += 3 * count;
+      addLog(state, "hook", `${source.name} 身上的【${buff.shortLabel}】被重组转移给 ${target.name}，POWER +${3 * count}。`, {
+        unitId: source.id,
+        targetUnitId: target.id,
+        sourceUnitId: caster?.id || null,
+      });
+      for (let index = 0; index < count; index += 1) {
+        applyBuff(state, EMP_BUFF, target, caster || source);
+      }
+      continue;
+    }
+
+    clearBuff(state, buff.key, source, { silent: true });
+
+    if (!buff.stackable) {
+      if (!hasBuff(target, buff.key)) {
+        applyBuff(state, buff.key, target, caster || source);
+      }
+      continue;
+    }
+
+    for (let index = 0; index < count; index += 1) {
+      applyBuff(state, buff.key, target, caster || source);
+    }
+  }
+}
+
 function destroyUnit(state, unit, reason, payload = {}) {
   if (!unit || !unit.alive) {
     return;
@@ -1467,8 +1507,8 @@ module.exports = class LibraryRun1Runtime extends BaseGame {
         return state;
       }
 
-      const maxTransfer = Math.min(source.power, 9 - target.power);
-      if (!Number.isInteger(amount) || amount < 1 || amount > maxTransfer) {
+      const maxTransfer = Math.max(0, source.power);
+      if (!Number.isInteger(amount) || amount < 0 || amount > maxTransfer) {
         return state;
       }
 
@@ -1476,6 +1516,7 @@ module.exports = class LibraryRun1Runtime extends BaseGame {
 
       source.power -= amount;
       target.power += amount;
+      transferUnitBuffs(state, source, target, caster);
       state.battle.activeSkillUsage[skill.key] = true;
 
       addLog(state, "skill", `${caster.name} 发动【${skill.label}】。`, {
@@ -1497,14 +1538,23 @@ module.exports = class LibraryRun1Runtime extends BaseGame {
     }
 
     if (action === "time-elapse") {
-      if (state.phase !== "BATTLE" || state.battle.status !== "PLAYER_TURN" || state.battle.pendingEnemyAction) {
+      const pendingAction = state?.battle?.pendingEnemyAction;
+      const isSkippableEnemyConfirm = !!(
+        state.phase === "BATTLE"
+        && state.battle.status === "ENEMY_CONFIRM"
+        && pendingAction
+        && pendingAction.sequenceOwner !== "player"
+        && !(pendingAction.kind === "gateway-sequence" && pendingAction.phase === "support")
+      );
+
+      if (!isSkippableEnemyConfirm) {
         return state;
       }
 
       const caster = findUnit(state.battle, data?.casterId);
       const skill = getUnitActiveSkill(caster, "time-elapse");
 
-      if (!skill || !canPlayerCommand(caster) || !caster?.alive) {
+      if (!skill || !canPlayerCommand(caster) || !caster?.alive || hasUsedActiveSkill(state, skill.key)) {
         return state;
       }
 
@@ -1515,31 +1565,20 @@ module.exports = class LibraryRun1Runtime extends BaseGame {
       });
       state.battle.activeSkillUsage[skill.key] = true;
 
-      if (state.battle.enemyAi === "stage2-rotation-defense") {
-        const currentIndex = state.battle.stageRuntime?.rotationIndex || 0;
-        const previewState = clone(state);
-        previewState.battle.stageRuntime = previewState.battle.stageRuntime || {};
-        previewState.battle.stageRuntime.rotationIndex = currentIndex;
-        const preview = resolveEnemyAction(previewState.battle.enemyAi, buildEnemyAiContext(previewState));
-        const skippedAttackerId = preview?.action?.attackerId || null;
+      const skippedAttackerId = pendingAction.attackerId || pendingAction.gatewayId || null;
+      state.battle.stageRuntime = state.battle.stageRuntime || {};
+      state.battle.stageRuntime.timeElapseSkippedUnitId = skippedAttackerId;
+      state.battle.pendingEnemyAction = null;
 
-        state.battle.stageRuntime = state.battle.stageRuntime || {};
-        state.battle.stageRuntime.rotationIndex = previewState.battle.stageRuntime?.rotationIndex ?? ((currentIndex + 1) % 3);
-        state.battle.stageRuntime.timeElapseSkippedUnitId = skippedAttackerId;
-
-        if (skippedAttackerId) {
-          const skippedUnit = findUnit(state.battle, skippedAttackerId);
-          addLog(state, "hook", `时间流逝跳过了 ${skippedUnit?.name || "该单位"} 的回合。`, {
-            unitId: skippedAttackerId,
-            sourceUnitId: caster.id,
-          });
-        }
+      if (skippedAttackerId) {
+        const skippedUnit = findUnit(state.battle, skippedAttackerId);
+        addLog(state, "hook", `时间流逝跳过了 ${skippedUnit?.name || "该单位"} 的本轮行动。`, {
+          unitId: skippedAttackerId,
+          sourceUnitId: caster.id,
+        });
       }
 
-      state.battle.turn += 1;
-      syncVirusActivation(state);
       clearTurnEndBuffs(state);
-      state.battle.pendingEnemyAction = null;
       state.battle.status = "PLAYER_TURN";
 
       if (evaluateBattleState(state, "time-elapse")) {
