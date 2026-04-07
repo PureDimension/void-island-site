@@ -90,7 +90,7 @@ const GUIDE_SETS = {
     {
       id: "toolbar-tips",
       speaker: "水铃儿",
-      text: "卡关了看看TIPS，里面会有一些关卡提示，刚开始只能看到模糊的提示；随着你逐步揭示，后面的提示也会解锁，足够你通关当前关卡。所有TIPS都是在不使用影子能力的情况下通关的路径。",
+      text: "卡关了看看TIPS，里面会有一些关卡提示，刚开始只能看到模糊的提示；随着你逐步揭示，后面的提示也会解锁，足够你通关当前关卡。",
       mode: "manual",
       highlights: [{ type: "area", id: "toolbar-tips" }],
       addRules: ["tips"],

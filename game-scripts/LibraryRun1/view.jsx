@@ -108,11 +108,23 @@ function useStageMusic(gameState) {
   const audioRef = useRef(null);
   const sampleRef = useRef(null);
   const musicFxRef = useRef(null);
-  const suppressNextNoticeRef = useRef(false);
+  const suppressTrackNoticeKeyRef = useRef(null);
   const [enabled, setEnabled] = useState(true);
   const [isPlaying, setIsPlaying] = useState(false);
   const [notice, setNotice] = useState(null);
   const track = useMemo(() => resolveMusicTrack(gameState), [gameState]);
+
+  const maybeShowTrackNotice = (nextTrack, setter) => {
+    if (!nextTrack) {
+      return;
+    }
+    if (suppressTrackNoticeKeyRef.current && suppressTrackNoticeKeyRef.current === nextTrack.key) {
+      suppressTrackNoticeKeyRef.current = null;
+      return;
+    }
+    suppressTrackNoticeKeyRef.current = null;
+    setter(nextTrack);
+  };
 
   useEffect(() => {
     if (!notice) {
@@ -165,11 +177,7 @@ function useStageMusic(gameState) {
               return;
             }
             setIsPlaying(true);
-            if (suppressNextNoticeRef.current) {
-              suppressNextNoticeRef.current = false;
-            } else {
-              setNotice(track);
-            }
+            maybeShowTrackNotice(track, setNotice);
           })
           .catch(() => {
             if (cancelled) {
@@ -179,11 +187,7 @@ function useStageMusic(gameState) {
           });
       } else {
         setIsPlaying(!audio.paused);
-        if (suppressNextNoticeRef.current) {
-          suppressNextNoticeRef.current = false;
-        } else {
-          setNotice(track);
-        }
+        maybeShowTrackNotice(track, setNotice);
       }
     };
 
@@ -240,22 +244,14 @@ function useStageMusic(gameState) {
       playPromise
         .then(() => {
           setIsPlaying(true);
-          if (suppressNextNoticeRef.current) {
-            suppressNextNoticeRef.current = false;
-          } else {
-            setNotice(track);
-          }
+          maybeShowTrackNotice(track, setNotice);
         })
         .catch(() => {
           setIsPlaying(false);
         });
     } else {
       setIsPlaying(true);
-      if (suppressNextNoticeRef.current) {
-        suppressNextNoticeRef.current = false;
-      } else {
-        setNotice(track);
-      }
+      maybeShowTrackNotice(track, setNotice);
     }
   };
 
@@ -264,7 +260,7 @@ function useStageMusic(gameState) {
     if (!sample || !enabled || !trackKey) {
       return;
     }
-    suppressNextNoticeRef.current = true;
+    suppressTrackNoticeKeyRef.current = track?.key || null;
     sample.pause();
     sample.currentTime = 0;
     sample.src = buildAssetUrl(`${trackKey}.mp3`);
