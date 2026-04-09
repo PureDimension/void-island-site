@@ -18,7 +18,7 @@ const tutorialStage = {
     enemyUnits: [
       { template: "signal-bee", id: "t-signal-1", slot: 1, side: "enemy", name: "信号工蜂1号" },
       { template: "signal-bee", id: "t-signal-2", slot: 2, side: "enemy", name: "信号工蜂2号" },
-      { template: "monitor-bee", id: "t-monitor", slot: 3, side: "enemy", name: "监控工蜂" },
+      { template: "monitor-bee", id: "t-monitor", slot: 3, side: "enemy", name: "监视工蜂" },
     ],
   },
   initialLogText: "教程关开始。",

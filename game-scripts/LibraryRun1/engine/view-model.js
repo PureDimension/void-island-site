@@ -1,4 +1,8 @@
-const { BUFF_CATALOG, VIRUS_BUFF } = require("../data/buffs");
+const {
+  BUFF_CATALOG,
+  VIRUS_BUFF,
+  COGNITIVE_DISSONANCE_BUFF,
+} = require("../data/buffs");
 const { getUnitDefinition } = require("../data/units/catalog");
 
 function cloneValue(value) {
@@ -116,7 +120,23 @@ const TARGET_RULE_RUNTIME = {
   hasAnyBuff,
 };
 
-function getBuffDescriptions(unit) {
+function getDerivedBuffKeys(unit) {
+  const derived = [];
+  if (unit?.runtimeState?.opponentPowerFixed != null) {
+    derived.push(COGNITIVE_DISSONANCE_BUFF);
+  }
+  return derived;
+}
+
+function getAllBuffKeys(unit) {
+  const actual = Object.values(BUFF_CATALOG)
+    .filter((buff) => !buff.derived)
+    .filter((buff) => (unit?.buffs?.[buff.key] || 0) > 0)
+    .map((buff) => buff.key);
+  return [...new Set([...actual, ...getDerivedBuffKeys(unit)])];
+}
+
+function getBuffDescriptionsLegacy(unit) {
   if (!unit?.buffs) {
     return [];
   }
@@ -126,7 +146,7 @@ function getBuffDescriptions(unit) {
     .map((buff) => `【${buff.shortLabel}】${buff.description}`);
 }
 
-function getBuffShortLabels(unit) {
+function getBuffShortLabelsLegacy(unit) {
   if (!unit?.buffs) {
     return [];
   }
@@ -290,9 +310,90 @@ function getUnitActiveSkills(unit, battle) {
   }));
 }
 
+function getStage3Polarity(unit) {
+  if (!(unit?.runtimeState?.stage3Seal || unit?.runtimeState?.stage3Book) || !unit.alive) {
+    return null;
+  }
+  if (unit.power >= 0 && unit.power <= 4) {
+    return "upright";
+  }
+  if (unit.power >= 5 && unit.power <= 9) {
+    return "reversed";
+  }
+  return null;
+}
+
+function getBuffDescriptions(unit) {
+  if (!unit) {
+    return [];
+  }
+
+  return getAllBuffKeys(unit)
+    .map((buffKey) => BUFF_CATALOG[buffKey])
+    .filter(Boolean)
+    .map((buff) => `【${buff.shortLabel}】：${buff.description}`);
+}
+
+function getBuffShortLabels(unit) {
+  if (!unit) {
+    return [];
+  }
+
+  return getAllBuffKeys(unit)
+    .map((buffKey) => BUFF_CATALOG[buffKey])
+    .filter(Boolean)
+    .map((buff) => `【${buff.shortLabel}】`);
+}
+
+function buildBuffDescriptions(unit, battle = null) {
+  if (!unit) {
+    return [];
+  }
+
+  const descriptions = getAllBuffKeys(unit)
+    .map((buffKey) => BUFF_CATALOG[buffKey])
+    .filter(Boolean)
+    .map((buff) => {
+      if (buff.key === COGNITIVE_DISSONANCE_BUFF) {
+        const value = unit.runtimeState?.opponentPowerFixed;
+        return `【认知失调：${value}】：战斗时，对方 POWER 视为 ${value}（本场战斗不触发）。新的【认知失调】会覆盖旧的同类状态。`;
+      }
+      return `【${buff.shortLabel}】：${buff.description}`;
+    });
+
+  if (battle && unit.runtimeState?.stage3NoAttackTurn === battle.turn && unit.abilityCode !== "s3-alchemist-carter") {
+    descriptions.push("复活回合无法攻击：该单位于本回合开始时被卡特复活，本回合无法攻击或协同攻击。");
+  }
+
+  return descriptions;
+}
+
+function buildBuffShortLabels(unit, battle = null) {
+  if (!unit) {
+    return [];
+  }
+
+  const labels = getAllBuffKeys(unit)
+    .map((buffKey) => BUFF_CATALOG[buffKey])
+    .filter(Boolean)
+    .map((buff) => {
+      if (buff.key === COGNITIVE_DISSONANCE_BUFF) {
+        const value = unit.runtimeState?.opponentPowerFixed;
+        return `【认知失调：${value}】`;
+      }
+      return `【${buff.shortLabel}】`;
+    });
+
+  if (battle && unit.runtimeState?.stage3NoAttackTurn === battle.turn && unit.abilityCode !== "s3-alchemist-carter") {
+    labels.push("复活回合无法攻击");
+  }
+
+  return labels;
+}
+
 module.exports = {
-  getBuffDescriptions,
-  getBuffShortLabels,
+  getBuffDescriptions: buildBuffDescriptions,
+  getBuffShortLabels: buildBuffShortLabels,
   getPowerDisplay,
   buildCenterFeed,
   buildDisplayBattle,
@@ -306,4 +407,5 @@ module.exports = {
   getVirusState,
   hasLockedTarget,
   getUnitActiveSkills,
+  getStage3Polarity,
 };

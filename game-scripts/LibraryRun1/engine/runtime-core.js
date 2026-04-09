@@ -5,7 +5,14 @@ const {
   BUFF_CATALOG,
 } = require("../data/buffs");
 const { STORY_SCENES } = require("../data/stories");
-const { FLOW, TUTORIAL_STAGE_ID, STAGE_1_ID, STAGE_2_ID } = require("../data/flow");
+const {
+  FLOW,
+  TUTORIAL_STAGE_ID,
+  STAGE_1_ID,
+  STAGE_2_ID,
+  STAGE_3_ID,
+  FLOW_JUMP_TARGETS,
+} = require("../data/flow");
 const { RULE_TEXT } = require("../data/rules");
 const { GUIDE_SETS } = require("../data/guides");
 const { getTipsForStage, canRevealTip } = require("../data/tips");
@@ -109,12 +116,28 @@ function createGuideState(stageId) {
   };
 }
 
+function createBattleEventState() {
+  return {
+    triggeredKeys: [],
+    queue: [],
+    active: null,
+  };
+}
+
 function currentGuideStep(state) {
   const guide = state?.battle?.guide;
   if (!guide || guide.hidden || guide.index < 0) {
     return null;
   }
   return guide.steps[guide.index] || null;
+}
+
+function currentBattleEventPage(state) {
+  const activeEvent = state?.battle?.eventState?.active;
+  if (!activeEvent) {
+    return null;
+  }
+  return activeEvent.pages?.[activeEvent.index] || null;
 }
 
 function learnRules(state, ruleKeys = []) {
@@ -147,9 +170,76 @@ function advanceGuide(state) {
   syncCurrentGuideRules(state);
 }
 
+function setEnemyLogicText(state, lines) {
+  if (!state?.battle) {
+    return;
+  }
+  state.battle.enemyLogicText = clone(lines || []);
+}
+
+function updateUnitPresentation(unit, options = {}) {
+  if (!unit) {
+    return unit;
+  }
+  if (Object.prototype.hasOwnProperty.call(options, "description")) {
+    unit.descriptionOverride = options.description;
+  }
+  if (Object.prototype.hasOwnProperty.call(options, "tags")) {
+    unit.tagsOverride = options.tags;
+  }
+  if (Object.prototype.hasOwnProperty.call(options, "name")) {
+    unit.name = options.name;
+  }
+  return refreshUnitPresentation(unit);
+}
+
+function summonUnit(state, entry) {
+  if (!(state?.battle && entry?.id && entry?.template && entry?.side)) {
+    return null;
+  }
+
+  const existing = findUnit(state.battle, entry.id);
+  if (existing) {
+    if (!existing.alive) {
+      reviveUnit(state, existing, "stage-event", null, entry.side);
+    }
+    return existing;
+  }
+
+  const [unit] = instantiateLineup(state, state.battle.stageId, [entry]);
+  if (!unit) {
+    return null;
+  }
+
+  if (entry.side === "player") {
+    state.battle.playerUnits.push(unit);
+    state.battle.playerUnits.sort((a, b) => a.slot - b.slot);
+  } else {
+    state.battle.enemyUnits.push(unit);
+    state.battle.enemyUnits.sort((a, b) => a.slot - b.slot);
+  }
+
+  if (state.battle.stageRuntime?.stage3CooperationEnabled) {
+    const enemyUnits = state.battle.enemyUnits
+      .filter((current) => current.alive)
+      .sort((a, b) => a.slot - b.slot);
+    enemyUnits.forEach((current, index) => {
+      const previous = enemyUnits[(index - 1 + enemyUnits.length) % enemyUnits.length];
+      current.runtimeState = current.runtimeState || {};
+      current.runtimeState.stage3CoopPartnerId = previous?.id || null;
+    });
+  }
+
+  addLog(state, "hook", `${unit.name} 被召唤到战场。`, {
+    unitId: unit.id,
+    source: "stage-event",
+  });
+  return unit;
+}
+
 function buildBattle(stageId, state) {
   const stageDefinition = STAGE_DEFS[stageId];
-  return {
+  const battle = {
     stageId: stageDefinition.stageId,
     title: stageDefinition.title,
     objective: stageDefinition.objective,
@@ -164,6 +254,7 @@ function buildBattle(stageId, state) {
       overloadPower: null,
     },
     pendingEnemyAction: null,
+    eventState: createBattleEventState(),
     lastEnemyAttackerId: null,
     lastPlayerAttackerId: null,
     lastCombatAttackerId: null,
@@ -179,6 +270,8 @@ function buildBattle(stageId, state) {
     ],
     guide: createGuideState(stageId),
   };
+  battle.stageRuntime.shadowAbilityUseCount = getShadowAbilityUseCount(state);
+  return battle;
 }
 
 function getAllUnits(battle) {
@@ -341,11 +434,222 @@ function canUnitBeTargetedBy(attacker, target) {
   return getControlSide(attacker) !== originalEnemySide;
 }
 
+function getStage3Stance(unit) {
+  if (!unit) {
+    return null;
+  }
+  if (unit.power >= 0 && unit.power <= 4) {
+    return "upright";
+  }
+  if (unit.power >= 5 && unit.power <= 9) {
+    return "reversed";
+  }
+  return null;
+}
+
+function isStage3OppositeStance(unitA, unitB) {
+  const stanceA = getStage3Stance(unitA);
+  const stanceB = getStage3Stance(unitB);
+  return (stanceA === "upright" && stanceB === "reversed")
+    || (stanceA === "reversed" && stanceB === "upright");
+}
+
+function stage3InvertUnit(state, unit, sourceUnit = null) {
+  if (!(unit && unit.alive)) {
+    return false;
+  }
+  if (unit.runtimeState?.stage3InvertImmune) {
+    addLog(state, "hook", `${unit.name} 免疫【真伪逆转】。`, {
+      unitId: unit.id,
+      sourceUnitId: sourceUnit?.id || null,
+    });
+    return false;
+  }
+  const originalPower = unit.power;
+  unit.power = 9 - originalPower;
+  addLog(state, "hook", `${unit.name} 触发【真伪逆转】，POWER 变为 ${unit.power}。`, {
+    unitId: unit.id,
+    sourceUnitId: sourceUnit?.id || null,
+  });
+  enforcePowerBounds(state, unit, {
+    cause: "stage3-inversion",
+    sourceUnitId: sourceUnit?.id || null,
+  });
+  return true;
+}
+
+function triggerStage3CarterOverflow(state, unit, sourceUnit = null) {
+  if (!(unit?.runtimeState?.stage3CarterOverflow && unit.alive && unit.power > 10)) {
+    return false;
+  }
+  addLog(state, "hook", `${unit.name} 的 POWER 超过 10，回廊失衡，所有单位被一并摧毁。`, {
+    unitId: unit.id,
+    sourceUnitId: sourceUnit?.id || null,
+  });
+  for (const current of getAllUnits(state.battle)) {
+    if (current.alive) {
+      destroyUnit(state, current, "stage3-carter-overflow", {
+        sourceUnitId: unit.id,
+      });
+    }
+  }
+  return true;
+}
+
+function applyDirectPowerChange(state, unit, nextPower, options = {}) {
+  if (!(unit && unit.alive) || !Number.isFinite(nextPower)) {
+    return false;
+  }
+  if (unit.runtimeState?.stage3DirectPowerImmune && !options.ignoreDirectPowerImmunity) {
+    addLog(state, "hook", `${unit.name} 免疫了这次直接改写 POWER 的效果。`, {
+      unitId: unit.id,
+      sourceUnitId: options.sourceUnitId || null,
+    });
+    return false;
+  }
+  unit.power = nextPower;
+  triggerStage3CarterOverflow(state, unit, options.sourceUnit || null);
+  return true;
+}
+
+function addDirectPower(state, unit, delta, options = {}) {
+  return applyDirectPowerChange(state, unit, unit.power + delta, options);
+}
+
+function isStage3BuffNullified(state, sourceUnit) {
+  if (!(state?.battle && sourceUnit)) {
+    return false;
+  }
+  return (
+    !!state.battle.stageRuntime?.stage3BuffNullifyActive
+    && getControlSide(sourceUnit) === state.battle.stageRuntime?.stage3BuffNullifySide
+  );
+}
+
+function clearStage3TurnScopedEffects(state) {
+  if (!state?.battle?.stageRuntime) {
+    return;
+  }
+  state.battle.stageRuntime.stage3BuffNullifyActive = false;
+  state.battle.stageRuntime.stage3BuffNullifySide = null;
+  state.battle.stageRuntime.stage3BuffNullifyTurn = null;
+}
+
+function normalizeStage3LoopBucket(bucket = []) {
+  return [...new Set(bucket)]
+    .filter((value) => Number.isFinite(value) && value >= 0 && value <= 9)
+    .sort((a, b) => a - b);
+}
+
+function addStage3GlobalLoop(state, kind, power) {
+  if (!(state?.battle?.stageRuntime && Number.isFinite(power))) {
+    return;
+  }
+  const stageRuntime = state.battle.stageRuntime;
+  const normalizedPower = normalizeStage3LoopBucket([power])[0];
+  if (!normalizedPower) {
+    return;
+  }
+
+  const existing = new Set([
+    ...(stageRuntime.stage3TimeLoopProtect || []),
+    ...(stageRuntime.stage3TimeLoopDestroy || []),
+    ...(stageRuntime.stage3PendingTimeLoopProtect || []),
+    ...(stageRuntime.stage3PendingTimeLoopDestroy || []),
+  ]);
+  if (existing.has(normalizedPower)) {
+    setPendingDefeat(state, {
+      outcome: "defeat",
+      stageId: state.battle.stageId,
+      reason: `重复获得 POWER ${normalizedPower} 的时空闭环，玩家立刻失败。`,
+      triggerSource: "stage3-duplicate-time-loop",
+    });
+    return;
+  }
+
+  const key = kind === "destroy" ? "stage3PendingTimeLoopDestroy" : "stage3PendingTimeLoopProtect";
+  const next = normalizeStage3LoopBucket([
+    ...(stageRuntime[key] || []),
+    normalizedPower,
+  ]);
+  stageRuntime[key] = next;
+}
+
+function commitPendingStage3Loops(state) {
+  const stageRuntime = state?.battle?.stageRuntime;
+  if (!stageRuntime) {
+    return;
+  }
+
+  const protect = normalizeStage3LoopBucket([
+    ...(stageRuntime.stage3TimeLoopProtect || []),
+    ...(stageRuntime.stage3PendingTimeLoopProtect || []),
+  ]);
+  const destroy = normalizeStage3LoopBucket([
+    ...(stageRuntime.stage3TimeLoopDestroy || []),
+    ...(stageRuntime.stage3PendingTimeLoopDestroy || []),
+  ]);
+
+  stageRuntime.stage3TimeLoopProtect = protect;
+  stageRuntime.stage3TimeLoopDestroy = destroy;
+  stageRuntime.stage3PendingTimeLoopProtect = [];
+  stageRuntime.stage3PendingTimeLoopDestroy = [];
+}
+
+function commitPendingStage3Dissonance(state) {
+  const battle = state?.battle;
+  if (!battle) {
+    return;
+  }
+
+  for (const unit of getAllUnits(battle)) {
+    const pendingValue = unit?.runtimeState?.pendingOpponentPowerFixed;
+    if (pendingValue == null) {
+      continue;
+    }
+    unit.runtimeState.opponentPowerFixed = pendingValue;
+    delete unit.runtimeState.pendingOpponentPowerFixed;
+  }
+}
+
+function resolveStage3CarterAscension(state, resultContext) {
+  const battle = state?.battle;
+  if (battle?.stageId !== "stage3-core") {
+    return;
+  }
+  const attacker = resultContext?.attacker;
+  const carter = findUnit(battle, "s3-alchemist-carter");
+  if (!(attacker && carter && !carter.alive && attacker.id !== carter.id)) {
+    return;
+  }
+  if (getControlSide(attacker) !== getControlSide(carter)) {
+    return;
+  }
+  carter.basePower = (carter.basePower ?? carter.power ?? 0) + 1;
+  carter.power = (carter.power ?? 0) + 1;
+  triggerStage3CarterOverflow(state, carter, attacker);
+  addLog(state, "hook", `${carter.name} 触发【升华】，POWER +1。`, {
+    unitId: carter.id,
+    sourceUnitId: attacker.id,
+  });
+}
+
 function moveUnitToSide(state, unit, nextSide) {
   if (!unit || unit.side === nextSide) {
     return;
   }
   unit.side = nextSide;
+}
+
+function removeUnitFromBattle(state, unit) {
+  if (!(state?.battle && unit?.id)) {
+    return false;
+  }
+  const beforePlayer = state.battle.playerUnits.length;
+  const beforeEnemy = state.battle.enemyUnits.length;
+  state.battle.playerUnits = state.battle.playerUnits.filter((current) => current.id !== unit.id);
+  state.battle.enemyUnits = state.battle.enemyUnits.filter((current) => current.id !== unit.id);
+  return beforePlayer !== state.battle.playerUnits.length || beforeEnemy !== state.battle.enemyUnits.length;
 }
 
 function canPlayerCommand(unit) {
@@ -445,6 +749,20 @@ function applyBuff(state, buffKey, recipient, sourceUnit) {
 
   const buff = BUFF_CATALOG[buffKey];
   if (!buff) {
+    return false;
+  }
+
+  const nullifyTurn = state?.battle?.stageRuntime?.stage3BuffNullifyTurn;
+  const nullifySide = state?.battle?.stageRuntime?.stage3BuffNullifySide;
+  if (
+    nullifyTurn === state?.battle?.turn
+    && sourceUnit
+    && getControlSide(sourceUnit) === nullifySide
+  ) {
+    addLog(state, "hook", `${sourceUnit.name} 对 ${recipient.name} 施加的【${buff.shortLabel}】被本回合无效化。`, {
+      unitId: sourceUnit.id,
+      targetUnitId: recipient.id,
+    });
     return false;
   }
 
@@ -561,6 +879,23 @@ function destroyUnit(state, unit, reason, payload = {}) {
   });
 
   runHooks("onDestroyed", state, { ...payload, reason, destroyedUnit: unit }, [unit]);
+  runHooks("onUnitDestroyed", state, { ...payload, reason, destroyedUnit: unit });
+
+  if (
+    state?.battle?.stageId === "stage3-core"
+    && state.battle.stageRuntime?.stage3InstantReviveEnabled
+    && getControlSide(unit) === "enemy"
+    && unit.id !== "s3-alchemist-carter"
+  ) {
+    const carter = findUnit(state.battle, "s3-alchemist-carter");
+    if (carter?.alive && reviveUnit(state, unit, "stage3-carter-turn10", carter, "enemy")) {
+      addLog(state, "hook", `【TURN10】${carter.name} 立即复活了 ${unit.name}。`, {
+        unitId: carter.id,
+        targetUnitId: unit.id,
+      });
+      return;
+    }
+  }
 
   if (unit.buffs[EMP_BUFF] > 0 && unit.combat.lastBattleUnitId) {
     const lastBattleUnit = findUnit(state.battle, unit.combat.lastBattleUnitId);
@@ -571,6 +906,10 @@ function destroyUnit(state, unit, reason, payload = {}) {
       });
       applyBuff(state, EMP_BUFF, lastBattleUnit, unit);
     }
+  }
+
+  if (unit.runtimeState?.removeOnDestroyed) {
+    removeUnitFromBattle(state, unit);
   }
 }
 
@@ -604,7 +943,8 @@ function enforcePowerBounds(state, unit, detail = {}) {
 
   syncVirusActivationForUnit(state, unit);
 
-  if (unit.power < 0 || unit.power > 9) {
+  const maxPower = unit.runtimeState?.allowPower10 ? 10 : 9;
+  if (unit.power < 0 || unit.power > maxPower) {
     addLog(state, "rule", `${unit.name} 的 POWER 变为 ${unit.power}，越界摧毁。`, {
       unitId: unit.id,
       value: unit.power,
@@ -617,8 +957,11 @@ function enforcePowerBounds(state, unit, detail = {}) {
 function createRuntimeHelpers() {
   return {
     addLog,
+    addDirectPower,
+    addStage3GlobalLoop,
     anyTargetHasBuff,
     applyBuff,
+    applyDirectPowerChange,
     areHostile,
     canUnitBeTargetedBy,
     clearBuff,
@@ -632,14 +975,23 @@ function createRuntimeHelpers() {
     getFriendlyUnitsByOriginalSide,
     getPreviousCombatAttacker,
     getPreviousCombatDefender,
+    getStage3Stance,
     hasAnyBuff,
     hasBuff,
+    isStage3BuffNullified,
     isSameSupportCamp,
     pickByPower,
     pickByPriority,
     copyAbility,
     reviveUnit,
+    removeUnitFromBattle,
+    settleCombatOutcome,
+    stage3InvertUnit,
+    isStage3OppositeStance,
+    summonUnit,
     swapAbilities,
+    updateUnitPresentation,
+    setEnemyLogicText,
   };
 }
 
@@ -653,6 +1005,17 @@ function runHooks(hookName, state, payload, units = null) {
       payload?.defender?.id,
     ].filter(Boolean));
     sourcePool = sourcePool.filter((unit) => unit.alive || participantIds.has(unit.id));
+  } else if (!units && hookName === "beforeCombat") {
+    const participantIds = new Set([
+      payload?.attacker?.id,
+      payload?.defender?.id,
+    ].filter(Boolean));
+    const participants = [payload?.attacker, payload?.defender]
+      .filter((unit) => unit && unit.alive);
+    const others = sourcePool
+      .filter((unit) => unit.alive)
+      .filter((unit) => !participantIds.has(unit.id));
+    sourcePool = [...participants, ...sortByPriority(others)];
   } else if (!units) {
     sourcePool = sourcePool.filter((unit) => unit.alive);
   }
@@ -710,6 +1073,11 @@ function getCombatPower(unit, state, context) {
   for (const hook of hooks) {
     currentPower = hook(runtime, state, { ...context, self: unit, currentPower });
   }
+  const opponent = context?.attacker?.id === unit.id ? context?.defender : context?.attacker;
+  const opponentFixedPower = opponent?.runtimeState?.opponentPowerFixed;
+  if (Number.isFinite(opponentFixedPower)) {
+    currentPower = opponentFixedPower;
+  }
   return currentPower;
 }
 
@@ -750,7 +1118,123 @@ function buildCombatPreview(state) {
   return result;
 }
 
+function maybeResolveStage3Cooperation(state, resultContext) {
+  const battle = state?.battle;
+  const stageRuntime = battle?.stageRuntime || {};
+  if (!stageRuntime.stage3CooperationEnabled) {
+    return;
+  }
+
+  const attacker = resultContext?.attacker;
+  const defender = resultContext?.defender;
+  if (!(attacker && defender && defender.alive)) {
+    return;
+  }
+
+  const partnerId = attacker.runtimeState?.stage3CoopPartnerId;
+  const partner = findUnit(battle, partnerId);
+  if (
+    !(
+      partner
+      && partner.alive
+      && partner.runtimeState?.stage3NoAttackTurn !== battle.turn
+    )
+  ) {
+    return;
+  }
+
+  const stance = resultContext?.attackerStage3Stance
+    || attacker.runtimeState?.stage3LastStance
+    || getStage3Stance(attacker);
+  if (!stance) {
+    return;
+  }
+
+  const visited = new Set(resultContext?.coopVisited || []);
+  if (visited.has(partner.id)) {
+    return;
+  }
+
+  const partnerStance = getStage3Stance(partner);
+  if (!partnerStance) {
+    return;
+  }
+  let canTrigger = (stance === "upright" && partnerStance === "reversed")
+    || (stance === "reversed" && partnerStance === "upright");
+  const forceCoopKey = `stage3ForceCoopTurn${battle.turn}`;
+  if (!canTrigger && stageRuntime.stage3ForceFirstFailedCoop && !stageRuntime[forceCoopKey]) {
+    canTrigger = true;
+    stageRuntime[forceCoopKey] = true;
+    addLog(state, "hook", `【TURN10】强制触发了 ${partner.name} 的首次失败协同攻击。`, {
+      unitId: partner.id,
+      sourceUnitId: attacker.id,
+      targetUnitId: defender.id,
+    });
+  }
+
+  if (!canTrigger) {
+    return;
+  }
+
+  visited.add(attacker.id);
+  visited.add(partner.id);
+  addLog(state, "hook", `${attacker.name} 触发协同攻击，${partner.name} 追击同一目标。`, {
+    unitId: attacker.id,
+    sourceUnitId: partner.id,
+    targetUnitId: defender.id,
+  });
+  state.battle.pendingEnemyAction = createPendingAction(state, {
+    kind: "stage3-coop",
+    attackerId: partner.id,
+    defenderId: defender.id,
+    source: "stage3-coop",
+    controllerSide: getControlSide(partner),
+    coopVisited: [...visited],
+  }, "enemy");
+}
+
+function applyStage3TimeLoops(state, fullContext) {
+  const stageRuntime = state?.battle?.stageRuntime;
+  if (!stageRuntime) {
+    return;
+  }
+
+  const protect = normalizeStage3LoopBucket(stageRuntime.stage3TimeLoopProtect || []);
+  const destroy = normalizeStage3LoopBucket(stageRuntime.stage3TimeLoopDestroy || []);
+  if (!protect.length && !destroy.length) {
+    return;
+  }
+
+  const enemyParticipants = [fullContext.attacker, fullContext.defender]
+    .filter((unit) => unit && unit.alive && getControlSide(unit) === "enemy");
+  const hasPowerTrigger = (value) => (
+    enemyParticipants.some((unit) => unit.power === value)
+  );
+
+  const matchedProtect = protect.filter(hasPowerTrigger);
+  const matchedDestroy = destroy.filter(hasPowerTrigger);
+
+  if (matchedProtect.length) {
+    fullContext.combatControl.stage3EnemyProtected = true;
+    addLog(
+      state,
+      "hook",
+      `【时空闭环-保护】生效：${matchedProtect.map((value) => `POWER ${value}`).join("、")} 对应的敌方单位本场战斗不可被摧毁。`
+    );
+  }
+
+  if (matchedDestroy.length) {
+    fullContext.combatControl.stage3EnemyForcedWin = true;
+    addLog(
+      state,
+      "hook",
+      `【时空闭环-摧毁】生效：${matchedDestroy.map((value) => `POWER ${value}`).join("、")} 对应的敌方单位本场战斗必定胜利。`
+    );
+  }
+}
+
 function settleCombatOutcome(state, context) {
+  const battle = state?.battle;
   const attacker = context.attacker;
   const defender = context.defender;
   if (!(attacker && defender && attacker.alive && defender.alive)) {
@@ -764,11 +1248,17 @@ function settleCombatOutcome(state, context) {
   defender.combat.battlesFought += 1;
   attacker.combat.lastBattleUnitId = defender.id;
   defender.combat.lastBattleUnitId = attacker.id;
+  if (battle?.stageId === "stage3-core" && getControlSide(attacker) === "player") {
+    attacker.runtimeState = attacker.runtimeState || {};
+    attacker.runtimeState.stage3HasAttacked = true;
+  }
 
   const fullContext = {
     ...context,
     attacker,
     defender,
+    attackerStage3Stance: getStage3Stance(attacker),
+    defenderStage3Stance: getStage3Stance(defender),
     previousAttacker,
     previousDefender,
     combatControl: {
@@ -777,6 +1267,7 @@ function settleCombatOutcome(state, context) {
   };
 
   runHooks("beforeCombat", state, fullContext);
+  applyStage3TimeLoops(state, fullContext);
 
   const attackerPower = attacker.alive ? getCombatPower(attacker, state, fullContext) : attacker.power;
   const defenderPower = defender.alive ? getCombatPower(defender, state, fullContext) : defender.power;
@@ -795,6 +1286,9 @@ function settleCombatOutcome(state, context) {
   if (fullContext.combatControl.skipResolution) {
     attackerDestroyed = !attacker.alive;
     defenderDestroyed = !defender.alive;
+  } else if (fullContext.combatControl.stage3EnemyForcedWin) {
+    attackerDestroyed = getControlSide(attacker) === "player";
+    defenderDestroyed = getControlSide(defender) === "player";
   } else if (attacker.alive && defender.alive) {
     if (attackerPower === defenderPower) {
       attackerDestroyed = true;
@@ -811,6 +1305,14 @@ function settleCombatOutcome(state, context) {
   }
   if (defenderDestroyed && defender.alive && preventCombatDestruction(state, defender, fullContext)) {
     defenderDestroyed = false;
+  }
+  if (fullContext.combatControl.stage3EnemyProtected) {
+    if (attackerDestroyed && getControlSide(attacker) === "enemy") {
+      attackerDestroyed = false;
+    }
+    if (defenderDestroyed && getControlSide(defender) === "enemy") {
+      defenderDestroyed = false;
+    }
   }
 
   if (attackerDestroyed && attacker.alive) {
@@ -838,6 +1340,10 @@ function settleCombatOutcome(state, context) {
   state.battle.lastCombatAttackerId = attacker.id;
   state.battle.lastCombatDefenderId = defender.id;
   runHooks("afterCombat", state, resultContext);
+  commitPendingStage3Loops(state);
+  commitPendingStage3Dissonance(state);
+  resolveStage3CarterAscension(state, resultContext);
+  maybeResolveStage3Cooperation(state, resultContext);
 
   for (const unit of getAllUnits(state.battle)) {
     if (unit.alive) {
@@ -950,6 +1456,15 @@ function createPendingAction(state, action, sequenceOwner) {
     };
   }
 
+  if (action.kind === "stage3-coop") {
+    return {
+      key: `${state.battle.turn}-${action.attackerId}-${action.defenderId}-stage3-coop`,
+      sequenceOwner,
+      dashed: false,
+      ...clone(action),
+    };
+  }
+
   return {
     key: `${state.battle.turn}-${action.attackerId}-${action.defenderId}-${action.kind}`,
     sequenceOwner,
@@ -1054,6 +1569,24 @@ function executePendingEnemyAction(state, pendingAction) {
     return advanceGatewaySequence(state, pendingAction);
   }
 
+  if (pendingAction.kind === "stage3-coop") {
+    const attacker = findUnit(state.battle, pendingAction.attackerId);
+    const defender = findUnit(state.battle, pendingAction.defenderId);
+    if (!(attacker && attacker.alive && defender && defender.alive)) {
+      return { completed: true };
+    }
+
+    settleCombatOutcome(state, {
+      attacker,
+      defender,
+      overloadPower: null,
+      source: pendingAction.source || "stage3-coop",
+      controllerSide: pendingAction.controllerSide || attacker.side,
+      coopVisited: clone(pendingAction.coopVisited || []),
+    });
+    return { completed: true };
+  }
+
   const attacker = findUnit(state.battle, pendingAction.attackerId);
   const defender = findUnit(state.battle, pendingAction.defenderId);
   if (!(attacker && attacker.alive && defender && defender.alive)) {
@@ -1085,6 +1618,92 @@ function clearTurnEndBuffs(state) {
       }
       clearBuff(state, buff.key, unit);
     }
+  }
+}
+
+function getStageBattleEvents(state) {
+  const stageId = state?.battle?.stageId;
+  return STAGE_DEFS[stageId]?.battleEvents || [];
+}
+
+function activateNextBattleEvent(state) {
+  const eventState = state?.battle?.eventState;
+  if (!eventState || eventState.active || !eventState.queue.length) {
+    return;
+  }
+  eventState.active = eventState.queue.shift();
+}
+
+function queueBattleEvent(state, eventDefinition) {
+  const eventState = state?.battle?.eventState;
+  if (!eventState || !eventDefinition) {
+    return;
+  }
+  const pages = clone(eventDefinition.pages || []);
+  if (!pages.length) {
+    return;
+  }
+  eventState.queue.push({
+    key: eventDefinition.key,
+    pages,
+    index: 0,
+  });
+}
+
+function matchBattleEvent(eventDefinition, trigger, turn) {
+  if (!eventDefinition || eventDefinition.trigger !== trigger) {
+    return false;
+  }
+  if (typeof eventDefinition.turn === "number") {
+    return eventDefinition.turn === turn;
+  }
+  return true;
+}
+
+function runStageBattleEvents(state, trigger) {
+  if (!state?.battle) {
+    return;
+  }
+
+  const turn = state.battle.turn || 1;
+  const eventState = state.battle.eventState || createBattleEventState();
+  state.battle.eventState = eventState;
+  const runtime = createRuntimeHelpers();
+
+  for (const eventDefinition of getStageBattleEvents(state)) {
+    if (eventState.triggeredKeys.includes(eventDefinition.key)) {
+      continue;
+    }
+    if (!matchBattleEvent(eventDefinition, trigger, turn)) {
+      continue;
+    }
+    eventState.triggeredKeys.push(eventDefinition.key);
+    if (typeof eventDefinition.apply === "function") {
+      eventDefinition.apply(runtime, state, eventDefinition);
+    }
+    queueBattleEvent(state, eventDefinition);
+  }
+
+  activateNextBattleEvent(state);
+}
+
+function runStageTurnStartHooks(state) {
+  if (!state?.battle) {
+    return;
+  }
+  const handler = STAGE_DEFS[state.battle.stageId]?.onTurnStart;
+  if (typeof handler === "function") {
+    handler(createRuntimeHelpers(), state);
+  }
+}
+
+function runStageEnemyTurnStartHooks(state) {
+  if (!state?.battle) {
+    return;
+  }
+  const handler = STAGE_DEFS[state.battle.stageId]?.onEnemyTurnStart;
+  if (typeof handler === "function") {
+    handler(createRuntimeHelpers(), state);
   }
 }
 
@@ -1132,7 +1751,7 @@ function moveToFlow(state, flowIndex) {
     state.phase = "VICTORY";
     thisEnd(state, {
       outcome: "victory",
-      stageId: STAGE_2_ID,
+      stageId: STAGE_3_ID,
       survivors: [],
       triggerSource: "flow-end",
     });
@@ -1151,6 +1770,8 @@ function moveToFlow(state, flowIndex) {
   state.story = null;
   state.battle = buildBattle(entry.stageId, state);
   syncCurrentGuideRules(state);
+  runStageTurnStartHooks(state);
+  runStageBattleEvents(state, "turn-start");
 }
 
 function evaluateBattleState(state, triggerSource) {
@@ -1183,7 +1804,7 @@ function evaluateBattleState(state, triggerSource) {
       return true;
     }
 
-    uniquePush(state.campaign.clearedStages, STAGE_2_ID);
+    uniquePush(state.campaign.clearedStages, state.battle.stageId === STAGE_3_ID ? STAGE_3_ID : STAGE_2_ID);
     moveToFlow(state, state.flowIndex + 1);
     return true;
   }
@@ -1232,6 +1853,16 @@ function hasUsedActiveSkill(state, skillKey) {
   return !!state?.battle?.activeSkillUsage?.[skillKey];
 }
 
+function getShadowAbilityUseCount(state) {
+  return Number(state?.campaign?.shadowAbilityUseCount || 0);
+}
+
+function syncShadowAbilityUseCount(state) {
+  if (state?.battle?.stageRuntime) {
+    state.battle.stageRuntime.shadowAbilityUseCount = getShadowAbilityUseCount(state);
+  }
+}
+
 module.exports = class LibraryRun1Runtime extends BaseGame {
   setup() {
     const state = {
@@ -1243,6 +1874,7 @@ module.exports = class LibraryRun1Runtime extends BaseGame {
       campaign: {
         mode: null,
         overloadUsed: false,
+        shadowAbilityUseCount: 0,
         clearedStages: [],
         ratings: {},
         revealedTips: {},
@@ -1278,6 +1910,27 @@ module.exports = class LibraryRun1Runtime extends BaseGame {
     }
 
     if (state.finalResults) {
+      return state;
+    }
+
+    if (action === "next-battle-event") {
+      if (state.phase !== "BATTLE" || !state.battle?.eventState?.active) {
+        return state;
+      }
+      const activeEvent = state.battle.eventState.active;
+      if (activeEvent.index < activeEvent.pages.length - 1) {
+        activeEvent.index += 1;
+      } else {
+        state.battle.eventState.active = null;
+        activateNextBattleEvent(state);
+        if (!state.battle.eventState.active) {
+          evaluateBattleState(state, "battle-event");
+        }
+      }
+      return state;
+    }
+
+    if (state.phase === "BATTLE" && state.battle?.eventState?.active) {
       return state;
     }
 
@@ -1385,7 +2038,13 @@ module.exports = class LibraryRun1Runtime extends BaseGame {
         return state;
       }
       state.campaign.mode = data.mode;
-      if (state.modeSelectResume) {
+      const jumpIndex = Object.prototype.hasOwnProperty.call(FLOW_JUMP_TARGETS, data?.jumpTarget)
+        ? FLOW_JUMP_TARGETS[data.jumpTarget]
+        : null;
+      if (typeof jumpIndex === "number") {
+        state.modeSelectResume = null;
+        moveToFlow(state, jumpIndex);
+      } else if (state.modeSelectResume) {
         state.phase = "STORY";
         state.story = buildStoryState(state.modeSelectResume.sceneId);
         state.story.index = state.modeSelectResume.index;
@@ -1449,6 +2108,7 @@ module.exports = class LibraryRun1Runtime extends BaseGame {
         state.battle.turn += 1;
         syncVirusActivation(state);
         state.battle.status = "ENEMY_OPENING";
+        runStageEnemyTurnStartHooks(state);
         resolveEnemyOpeningStrike(state);
 
         if (state.battle.pendingEnemyAction) {
@@ -1464,8 +2124,11 @@ module.exports = class LibraryRun1Runtime extends BaseGame {
         }
 
         clearTurnEndBuffs(state);
+        clearStage3TurnScopedEffects(state);
         state.battle.status = "PLAYER_TURN";
         addLog(state, "system", `第 ${state.battle.turn} 回合开始。`);
+        runStageTurnStartHooks(state);
+        runStageBattleEvents(state, "turn-start");
         return state;
       }
 
@@ -1477,8 +2140,11 @@ module.exports = class LibraryRun1Runtime extends BaseGame {
       }
 
       clearTurnEndBuffs(state);
+      clearStage3TurnScopedEffects(state);
       state.battle.status = "PLAYER_TURN";
       addLog(state, "system", `第 ${state.battle.turn} 回合开始。`);
+      runStageTurnStartHooks(state);
+      runStageBattleEvents(state, "turn-start");
       return state;
     }
 
@@ -1493,7 +2159,7 @@ module.exports = class LibraryRun1Runtime extends BaseGame {
       const amount = Number(data?.amount);
       const skill = getUnitActiveSkill(caster, "space-reorg");
 
-      if (!skill || hasUsedActiveSkill(state, skill.key)) {
+      if (!skill || (skill.oncePerStage && hasUsedActiveSkill(state, skill.key))) {
         return state;
       }
 
@@ -1514,10 +2180,43 @@ module.exports = class LibraryRun1Runtime extends BaseGame {
 
       pushHistory(state);
 
-      source.power -= amount;
-      target.power += amount;
+      const shadowCost = (
+        caster?.id === "p-robot"
+        && state.campaign.mode === "story"
+        && state.battle.stageId === "stage3-core"
+      ) ? getShadowAbilityUseCount(state) : 0;
+
+      if (shadowCost > 0) {
+        applyDirectPowerChange(state, caster, caster.power - shadowCost, {
+          sourceUnit: caster,
+          sourceUnitId: caster.id,
+        });
+        addLog(state, "hook", `${caster.name} 发动前支付了 ${shadowCost} 点 POWER。`, {
+          unitId: caster.id,
+          amount: shadowCost,
+        });
+        enforcePowerBounds(state, caster, { cause: "shadow-ability-cost", sourceUnitId: caster.id });
+        if (evaluateBattleState(state, "shadow-ability-cost")) {
+          return state;
+        }
+      }
+
+      applyDirectPowerChange(state, source, source.power - amount, {
+        sourceUnit: caster,
+        sourceUnitId: caster.id,
+      });
+      applyDirectPowerChange(state, target, target.power + amount, {
+        sourceUnit: caster,
+        sourceUnitId: caster.id,
+      });
       transferUnitBuffs(state, source, target, caster);
-      state.battle.activeSkillUsage[skill.key] = true;
+      if (skill.oncePerStage) {
+        state.battle.activeSkillUsage[skill.key] = true;
+      }
+      if (caster?.id === "p-robot" && state.campaign.mode === "story") {
+        state.campaign.shadowAbilityUseCount = getShadowAbilityUseCount(state) + 1;
+        syncShadowAbilityUseCount(state);
+      }
 
       addLog(state, "skill", `${caster.name} 发动【${skill.label}】。`, {
         unitId: caster.id,
@@ -1554,16 +2253,41 @@ module.exports = class LibraryRun1Runtime extends BaseGame {
       const caster = findUnit(state.battle, data?.casterId);
       const skill = getUnitActiveSkill(caster, "time-elapse");
 
-      if (!skill || !canPlayerCommand(caster) || !caster?.alive || hasUsedActiveSkill(state, skill.key)) {
+      if (!skill || !canPlayerCommand(caster) || !caster?.alive || (skill.oncePerStage && hasUsedActiveSkill(state, skill.key))) {
         return state;
       }
 
       pushHistory(state);
+      const shadowCost = (
+        caster?.id === "p-robot"
+        && state.campaign.mode === "story"
+        && state.battle.stageId === "stage3-core"
+      ) ? getShadowAbilityUseCount(state) : 0;
+      if (shadowCost > 0) {
+        applyDirectPowerChange(state, caster, caster.power - shadowCost, {
+          sourceUnit: caster,
+          sourceUnitId: caster.id,
+        });
+        addLog(state, "hook", `${caster.name} 发动前支付了 ${shadowCost} 点 POWER。`, {
+          unitId: caster.id,
+          amount: shadowCost,
+        });
+        enforcePowerBounds(state, caster, { cause: "shadow-ability-cost", sourceUnitId: caster.id });
+        if (evaluateBattleState(state, "shadow-ability-cost")) {
+          return state;
+        }
+      }
 
       addLog(state, "skill", `${caster.name} 发动【${skill.label}】。`, {
         unitId: caster.id,
       });
-      state.battle.activeSkillUsage[skill.key] = true;
+      if (skill.oncePerStage) {
+        state.battle.activeSkillUsage[skill.key] = true;
+      }
+      if (caster?.id === "p-robot" && state.campaign.mode === "story") {
+        state.campaign.shadowAbilityUseCount = getShadowAbilityUseCount(state) + 1;
+        syncShadowAbilityUseCount(state);
+      }
 
       const skippedAttackerId = pendingAction.attackerId || pendingAction.gatewayId || null;
       state.battle.stageRuntime = state.battle.stageRuntime || {};
@@ -1579,6 +2303,7 @@ module.exports = class LibraryRun1Runtime extends BaseGame {
       }
 
       clearTurnEndBuffs(state);
+      clearStage3TurnScopedEffects(state);
       state.battle.status = "PLAYER_TURN";
 
       if (evaluateBattleState(state, "time-elapse")) {
@@ -1589,6 +2314,8 @@ module.exports = class LibraryRun1Runtime extends BaseGame {
       }
 
       addLog(state, "system", `第 ${state.battle.turn} 回合开始。`);
+      runStageTurnStartHooks(state);
+      runStageBattleEvents(state, "turn-start");
       return state;
     }
 
@@ -1676,15 +2403,27 @@ module.exports = class LibraryRun1Runtime extends BaseGame {
       });
     }
 
-    if (attacker.abilityCode === "gateway-b-cell") {
+    if (attacker.abilityCode === "gateway-b-cell" || attacker.abilityCode === "s3-memory-gateway") {
+      const supportIds = attacker.abilityCode === "gateway-b-cell"
+        ? sortByPriority(getFriendlySupportUnits(state, attacker, "player")
+          .filter((unit) => unit.alive)
+          .filter((unit) => unit.code === "patrol-monocyte" || unit.code === "cleaner-lysosome"))
+            .map((unit) => unit.id)
+        : sortByPriority(getFriendlySupportUnits(state, attacker, "player")
+          .filter((unit) => unit.alive)
+          .filter((unit) => unit.id !== attacker.id)
+          .filter((unit) => (
+            unit.abilityCode === "s3-memory-signal"
+            || unit.abilityCode === "s3-memory-kite"
+            || unit.abilityCode === "s3-memory-waterbell"
+          )))
+            .map((unit) => unit.id);
+
       state.battle.pendingEnemyAction = createPendingAction(state, {
         kind: "gateway-burst",
         attackerId: attacker.id,
         defenderId: defender.id,
-        supportIds: sortByPriority(getFriendlySupportUnits(state, attacker, "player")
-          .filter((unit) => unit.alive)
-          .filter((unit) => unit.code === "patrol-monocyte" || unit.code === "cleaner-lysosome"))
-          .map((unit) => unit.id),
+        supportIds,
         source: "player-attack",
         controllerSide: "player",
       }, "player");
@@ -1720,6 +2459,7 @@ module.exports = class LibraryRun1Runtime extends BaseGame {
     state.battle.turn += 1;
     syncVirusActivation(state);
     state.battle.status = "ENEMY_OPENING";
+    runStageEnemyTurnStartHooks(state);
     resolveEnemyOpeningStrike(state);
 
     if (state.battle.pendingEnemyAction) {
@@ -1735,8 +2475,11 @@ module.exports = class LibraryRun1Runtime extends BaseGame {
     }
 
     clearTurnEndBuffs(state);
+    clearStage3TurnScopedEffects(state);
     state.battle.status = "PLAYER_TURN";
     addLog(state, "system", `第 ${state.battle.turn} 回合开始。`);
+    runStageTurnStartHooks(state);
+    runStageBattleEvents(state, "turn-start");
     return state;
   }
 };

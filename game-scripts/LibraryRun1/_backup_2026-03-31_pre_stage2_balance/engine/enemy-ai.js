@@ -190,10 +190,60 @@ function stage2RotationDefense(context) {
   };
 }
 
+function stage3TurnBooks(context) {
+  const stageRuntime = context.state.battle?.stageRuntime || {};
+  const forcedTarget = (
+    stageRuntime.stage3ForcedEnemyTargetTurn === context.state.battle?.turn
+      ? context.findUnit(context.state.battle, stageRuntime.stage3ForcedEnemyTargetId)
+      : null
+  );
+  const target = forcedTarget && forcedTarget.alive && context.canEnemyTreatAsPlayerTarget(forcedTarget)
+    ? forcedTarget
+    : context.findUnit(context.state.battle, "p-robot");
+
+  if (!target || !target.alive || !context.canEnemyTreatAsPlayerTarget(target)) {
+    return {
+      action: null,
+      noActionText: "本回合没有敌方行动。",
+    };
+  }
+
+  const turnForEnemyAction = Math.max(1, (context.state.battle?.turn || 1) - 1);
+  const turnMod = ((turnForEnemyAction - 1) % 5) + 1;
+  const attackerOrder = {
+    1: "s3-book-element",
+    2: "s3-book-strength",
+    3: "s3-book-soul",
+    4: "s3-book-space",
+    5: "s3-alchemist-carter",
+  };
+
+  const attacker = context.findUnit(context.state.battle, attackerOrder[turnMod]);
+  if (!(attacker && context.canEnemyCommand(attacker))) {
+    return {
+      action: null,
+      noActionText: "本回合没有敌方行动。",
+    };
+  }
+
+  return {
+    action: {
+      kind: "combat",
+      attackerId: attacker.id,
+      defenderId: target.id,
+      source: "enemy-open-strike",
+      controllerSide: "enemy",
+    },
+    announceText: `${attacker.name} 锁定 ${target.name}。`,
+    noActionText: "本回合没有敌方行动。",
+  };
+}
+
 const ENEMY_AI_REGISTRY = {
   "tutorial-max-slot": tutorialMaxSlot,
   "stage1-passive-defense": stage1PassiveDefense,
   "stage2-rotation-defense": stage2RotationDefense,
+  "stage3-turn-books": stage3TurnBooks,
 };
 
 function resolveEnemyAction(aiId, context) {

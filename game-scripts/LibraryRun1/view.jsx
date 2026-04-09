@@ -1,6 +1,7 @@
 import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 const {
   getBuffDescriptions: modelGetBuffDescriptions,
+  getBuffShortLabels: modelGetBuffShortLabels,
   getPowerDisplay: modelGetPowerDisplay,
   buildCenterFeed: modelBuildCenterFeed,
   buildDisplayBattle: modelBuildDisplayBattle,
@@ -14,8 +15,9 @@ const {
   getVirusState: modelGetVirusState,
   hasLockedTarget: modelHasLockedTarget,
   getUnitActiveSkills: modelGetUnitActiveSkills,
+  getStage3Polarity: modelGetStage3Polarity,
 } = require("./engine/view-model");
-const { BUFF_CATALOG, MARK_BUFF, VIRUS_BUFF } = require("./data/buffs");
+const { MARK_BUFF, VIRUS_BUFF } = require("./data/buffs");
 const { getStoryBackground } = require("./data/backgrounds");
 const { buildAssetUrl, resolveMusicTrack } = require("./data/music");
 const { getTipsForStage } = require("./data/tips");
@@ -478,6 +480,24 @@ function GuideCard({ step, onNext }) {
   );
 }
 
+function BattleEventCard({ page, onNext }) {
+  if (!page) {
+    return null;
+  }
+
+  return (
+    <button type="button" className={`battle-event-card ${page.tone === "red" ? "tone-red" : ""}`.trim()} onClick={onNext}>
+      <div className="battle-event-speaker">{page.speaker}</div>
+      <div className="battle-event-copy">
+        {(page.paragraphs?.length ? page.paragraphs : [page.text]).map((item) => (
+          <p key={item}>{item}</p>
+        ))}
+      </div>
+      <div className="battle-event-hint">点击继续</div>
+    </button>
+  );
+}
+
 function Overlay({ title, children, onClose, cardClassName = "" }) {
   return (
     <div className="overlay-mask" onClick={onClose}>
@@ -520,7 +540,20 @@ function RulesOverlay({ rules, onClose }) {
   );
 }
 
+const MODE_JUMP_OPTIONS = [
+  { key: "disabled", label: "不启用" },
+  { key: "stage1Story", label: "01剧情" },
+  { key: "stage1Battle", label: "01战斗" },
+  { key: "stage2Story", label: "02剧情" },
+  { key: "stage2Battle", label: "02战斗" },
+  { key: "stage3Story", label: "03剧情" },
+  { key: "stage3Battle", label: "03战斗" },
+  { key: "finalStory", label: "最终剧情" },
+];
+
 function ModeSelectOverlay({ onPick }) {
+  const [jumpTarget, setJumpTarget] = useState("disabled");
+
   return (
     <div className="overlay-mask mode-select-mask">
       <div className="overlay-card mode-select-card" onClick={(event) => event.stopPropagation()}>
@@ -529,14 +562,31 @@ function ModeSelectOverlay({ onPick }) {
           故事模式中，影子会随着剧情推进逐步解锁能力，适合喜欢剧情和愉快体验的休闲玩家；挑战模式中，影子将保持无能力的状态，适合想要充分体验解谜乐趣的玩家。即使是在故事模式中，也可以尝试在不发动影子能力的情况下通关游戏！
         </p>
         <div className="mode-select-grid">
-          <button type="button" className="mode-option story" onClick={() => onPick("story")}>
+          <button type="button" className="mode-option story" onClick={() => onPick("story", jumpTarget)}>
             <div className="mode-option-title">故事模式</div>
             <div className="mode-option-copy">保留剧情能力解锁与专属演出。</div>
           </button>
-          <button type="button" className="mode-option challenge" onClick={() => onPick("challenge")}>
+          <button type="button" className="mode-option challenge" onClick={() => onPick("challenge", jumpTarget)}>
             <div className="mode-option-title">挑战模式</div>
             <div className="mode-option-copy">影子不获得额外能力，按纯解谜规则推进。</div>
           </button>
+        </div>
+        <div className="mode-jump-row">
+          <div className="mode-jump-label">跳关</div>
+          <div className="mode-jump-options">
+            {MODE_JUMP_OPTIONS.map((item) => (
+              <button
+                key={item.key}
+                type="button"
+                className={`mode-jump-chip ${jumpTarget === item.key ? "active" : ""}`.trim()}
+                onClick={() => setJumpTarget(item.key)}
+                title={item.label}
+              >
+                <span className="mode-jump-dot" />
+                <span className="mode-jump-text">{item.label}</span>
+              </button>
+            ))}
+          </div>
         </div>
       </div>
     </div>
@@ -588,7 +638,7 @@ function TipDetailOverlay({ item, onClose }) {
 function FailureOverlay({ reason, onUndo, onGiveUp }) {
   return (
     <div className="overlay-mask">
-      <div className="overlay-card">
+      <div className="overlay-card outcome-card tone-red">
         <div className="panel-title">行动失败</div>
         <p className="panel-copy">{reason}</p>
         <div className="overlay-actions">
@@ -607,7 +657,7 @@ function FailureOverlay({ reason, onUndo, onGiveUp }) {
 function ResultOverlay({ finalResults }) {
   return (
     <div className="overlay-mask">
-      <div className="overlay-card">
+      <div className={`overlay-card outcome-card ${finalResults?.outcome === "victory" ? "tone-red" : ""}`.trim()}>
         <div className="panel-title">
           {finalResults?.outcome === "victory" ? "突破完成" : "行动结束"}
         </div>
@@ -977,17 +1027,50 @@ function TimeElapseOverlay({
   );
 }
 
+function Stage3TimeLoopOverlay({ battle }) {
+  if (battle?.stageId !== "stage3-core") {
+    return null;
+  }
+
+  const protect = battle?.stageRuntime?.stage3TimeLoopProtect || [];
+  const destroy = battle?.stageRuntime?.stage3TimeLoopDestroy || [];
+  const leftValues = [0, 1, 2, 3, 4];
+  const rightValues = [5, 6, 7, 8, 9];
+  const renderGroup = (values) => values.map((value) => (
+    <div
+      key={value}
+      className={[
+        "stage3-loop-slot",
+        protect.includes(value) ? "protect" : "",
+        destroy.includes(value) ? "destroy" : "",
+      ].filter(Boolean).join(" ")}
+    >
+      <div className="stage3-loop-number">{value}</div>
+    </div>
+  ));
+
+  return (
+    <div className="stage3-loop-overlay" aria-hidden="true">
+      <div className="stage3-loop-label">时空闭环计数</div>
+      <div className="stage3-loop-row">
+        <div className="stage3-loop-group left">{renderGroup(leftValues)}</div>
+        <div className="stage3-loop-gap" />
+        <div className="stage3-loop-group right">{renderGroup(rightValues)}</div>
+      </div>
+    </div>
+  );
+}
+
 function CellMeta({ unit, gameState, virusStateOverride }) {
   const power = modelGetPowerDisplay(unit, gameState);
   const virusState = virusStateOverride ?? modelGetVirusState(unit);
-  const buffLabels = Object.values(BUFF_CATALOG)
-    .filter((buff) => buff.key !== MARK_BUFF)
-    .filter((buff) => (unit?.buffs?.[buff.key] || 0) > 0)
-    .map((buff) => (
-      buff.key === VIRUS_BUFF
+  const buffLabels = modelGetBuffShortLabels(unit, gameState?.battle)
+    .map((label) => (
+      label === "【病毒】"
         ? (virusState === "active" ? "【病毒生效】" : "【病毒潜伏】")
-        : `【${buff.shortLabel}】`
-    ));
+        : label
+    ))
+    .filter((label) => label !== "【标记】");
   const hasMark = !!(unit?.buffs?.[MARK_BUFF] > 0);
 
   return (
@@ -1009,7 +1092,10 @@ function CellMeta({ unit, gameState, virusStateOverride }) {
       {buffLabels.length > 0 ? (
         <div className="unit-buffs">
           {buffLabels.map((buff) => (
-            <span key={`${unit.id}-${buff}`} className="buff-chip">
+            <span
+              key={`${unit.id}-${buff}`}
+              className={`buff-chip ${buff === "复活回合无法攻击" ? "revive-lock" : ""}`.trim()}
+            >
               {buff}
             </span>
           ))}
@@ -1043,9 +1129,12 @@ function UnitCell({
   spaceReorgTarget,
   virusStateOverride,
   timeSkipHighlight,
+  stage3CurrentAttacker,
+  stage3UpcomingCoop,
 }) {
   const isDisguise = modelGetUnitDisplayMode(unit) === "split";
   const forceTargetLocked = modelHasLockedTarget(unit);
+  const stage3Polarity = modelGetStage3Polarity(unit);
 
   const rootClassName = [
     "unit-cell",
@@ -1062,6 +1151,9 @@ function UnitCell({
     spaceReorgSource ? "space-reorg-source" : "",
     spaceReorgTarget ? "space-reorg-target" : "",
     timeSkipHighlight ? "time-skip-highlight" : "",
+    stage3CurrentAttacker ? "stage3-turn-attacker" : "",
+    stage3UpcomingCoop ? "stage3-upcoming-coop" : "",
+    stage3Polarity ? `stage3-${stage3Polarity}` : "",
     !unit.alive ? "dead" : "",
     isDisguise ? "disguise-cell" : "",
   ].filter(Boolean).join(" ");
@@ -1069,8 +1161,11 @@ function UnitCell({
   if (!isDisguise) {
     return (
       <div className={rootClassName} ref={registerRef} data-unit-id={unit.id}>
+        {stage3CurrentAttacker ? <div className="stage3-turn-attacker-badge">本轮攻击者</div> : null}
+        {stage3UpcomingCoop ? <div className="stage3-turn-attacker-badge coop">将要协同攻击</div> : null}
         {(spaceReorgSource || spaceReorgTarget) ? <div className={`space-reorg-aura ${spaceReorgSource ? "source" : "target"}`} /> : null}
         <div className="unit-shell" data-unit-id={unit.id}>
+          {stage3Polarity ? <div className={`stage3-polarity-frame ${stage3Polarity}`} /> : null}
           {(spaceReorgSource || spaceReorgTarget) ? <div className={`space-reorg-inner ${spaceReorgSource ? "source" : "target"}`} /> : null}
           <button type="button" className="unit-button" onClick={onClick} data-unit-id={unit.id} />
           {incomingBuffText ? <div className="incoming-buff-callout">{incomingBuffText}</div> : null}
@@ -1092,8 +1187,11 @@ function UnitCell({
 
   return (
     <div className={rootClassName} ref={registerRef} data-unit-id={unit.id}>
+      {stage3CurrentAttacker ? <div className="stage3-turn-attacker-badge">本轮攻击者</div> : null}
+      {stage3UpcomingCoop ? <div className="stage3-turn-attacker-badge coop">将要协同攻击</div> : null}
       {(spaceReorgSource || spaceReorgTarget) ? <div className={`space-reorg-aura ${spaceReorgSource ? "source" : "target"}`} /> : null}
       <div className="unit-shell disguise-shell" data-unit-id={unit.id}>
+        {stage3Polarity ? <div className={`stage3-polarity-frame ${stage3Polarity}`} /> : null}
         {(spaceReorgSource || spaceReorgTarget) ? <div className={`space-reorg-inner ${spaceReorgSource ? "source" : "target"}`} /> : null}
         {incomingBuffText ? <div className="incoming-buff-callout">{incomingBuffText}</div> : null}
         <button
@@ -1147,7 +1245,7 @@ function SidePanel({
   guideStep,
 }) {
   const power = modelGetPowerDisplay(selectedUnit, gameState);
-  const buffDescriptions = modelGetBuffDescriptions(selectedUnit);
+  const buffDescriptions = modelGetBuffDescriptions(selectedUnit, battle);
   const abilityContextEntries = modelGetAbilityContextEntries(selectedUnit, battle);
   const activeSkills = modelGetUnitActiveSkills(selectedUnit, battle);
   const canUseTimeElapseNow = !!(
@@ -1222,8 +1320,11 @@ function SidePanel({
             </div>
 
             <div className={hasHighlight(guideStep, "area", "panel-description") ? "guide-glow-inline blockish" : ""}>
-              {descriptionLines.map((line) => (
-                <div key={line} className="panel-copy description-line">
+              {descriptionLines.map((line, index) => (
+                <div
+                  key={`${index}-${line}`}
+                  className={`panel-copy description-line ${/【警告】|【TURN5 \/ TURN10】/.test(line) ? "alert" : ""}`.trim()}
+                >
                   {line}
                 </div>
               ))}
@@ -1324,6 +1425,9 @@ export default function LibraryRun1View({ gameState, onAction }) {
   const skippedTurnUnitId = timeElapseFx?.active ? (battle?.stageRuntime?.timeElapseSkippedUnitId || null) : null;
   const displayBattle = useMemo(() => modelBuildDisplayBattle(battle, enemyConfirm), [battle, enemyConfirm]);
   const guideStep = battle?.currentGuideStep || null;
+  const battleEventPage = battle?.eventState?.active
+    ? battle.eventState.active.pages?.[battle.eventState.active.index] || null
+    : null;
 
   const allUnits = useMemo(
     () => (displayBattle ? [...displayBattle.playerUnits, ...displayBattle.enemyUnits] : []),
@@ -1341,6 +1445,77 @@ export default function LibraryRun1View({ gameState, onAction }) {
       .sort((a, b) => a.slot - b.slot),
     [allUnits]
   );
+  const stage3PlayerRowScrollable = battle?.stageId === "stage3-core" && playerUnits.length > 6;
+  const stage3CurrentAttackerId = useMemo(() => {
+    if (battle?.stageId !== "stage3-core") {
+      return null;
+    }
+    if (enemyConfirm?.attackerId) {
+      return enemyConfirm.attackerId;
+    }
+    const attackerOrder = [
+      "s3-book-element",
+      "s3-book-strength",
+      "s3-book-soul",
+      "s3-book-space",
+      "s3-alchemist-carter",
+    ];
+    const attackerId = attackerOrder[(Math.max(1, displayTurn) - 1) % attackerOrder.length];
+    return allUnits.find((unit) => unit.id === attackerId && unit.alive)?.id || null;
+  }, [allUnits, battle?.stageId, displayTurn, enemyConfirm?.attackerId]);
+  const stage3UpcomingCoopIds = useMemo(() => {
+    if (!(battle?.stageId === "stage3-core" && battle?.stageRuntime?.stage3CooperationEnabled && stage3CurrentAttackerId)) {
+      return [];
+    }
+
+    const findAliveUnit = (unitId) => allUnits.find((unit) => unit.id === unitId && unit.alive) || null;
+    const result = [];
+    const visited = new Set([stage3CurrentAttackerId]);
+    let usedForcedFailure = false;
+    let current = findAliveUnit(stage3CurrentAttackerId);
+
+    while (current?.alive) {
+      const currentPolarity = modelGetStage3Polarity(current);
+      if (!currentPolarity) {
+        break;
+      }
+
+      const partner = findAliveUnit(current.runtimeState?.stage3CoopPartnerId);
+      if (
+        !(
+          partner
+          && !visited.has(partner.id)
+          && partner.runtimeState?.stage3NoAttackTurn !== battle?.turn
+        )
+      ) {
+        break;
+      }
+
+      const partnerPolarity = modelGetStage3Polarity(partner);
+      if (!partnerPolarity) {
+        break;
+      }
+      const isOpposite = (
+        (currentPolarity === "upright" && partnerPolarity === "reversed")
+        || (currentPolarity === "reversed" && partnerPolarity === "upright")
+      );
+      const canForce = !!battle?.stageRuntime?.stage3ForceFirstFailedCoop && !usedForcedFailure;
+
+      if (!isOpposite && !canForce) {
+        break;
+      }
+
+      if (!isOpposite && canForce) {
+        usedForcedFailure = true;
+      }
+
+      result.push(partner.id);
+      visited.add(partner.id);
+      current = partner;
+    }
+
+    return result;
+  }, [allUnits, battle?.stageId, battle?.stageRuntime?.stage3CooperationEnabled, battle?.stageRuntime?.stage3ForceFirstFailedCoop, battle?.turn, stage3CurrentAttackerId]);
 
   const selectedAttacker = allUnits.find((unit) => unit.id === selectedAttackerId) || null;
   const selectedTarget = allUnits.find((unit) => unit.id === selectedTargetId) || null;
@@ -1698,6 +1873,30 @@ export default function LibraryRun1View({ gameState, onAction }) {
   const confirmControllerSide = enemyConfirm?.controllerSide || null;
   const confirmAttackerId = enemyConfirm?.attackerId || null;
   const confirmDefenderId = enemyConfirm?.defenderId || null;
+  const dissonanceWarnings = useMemo(() => {
+    const previewAttacker = enemyConfirm
+      ? allUnits.find((unit) => unit.id === enemyConfirm.attackerId)
+      : selectedAttacker;
+    const previewDefender = enemyConfirm
+      ? allUnits.find((unit) => unit.id === enemyConfirm.defenderId)
+      : selectedTarget;
+
+    if (!(previewAttacker && previewDefender)) {
+      return [];
+    }
+
+    return [previewAttacker, previewDefender]
+      .filter((unit) => unit?.runtimeState?.opponentPowerFixed != null)
+      .map((holder) => {
+        const holderSide = holder.side === "enemy" ? "敌方" : "己方";
+        const affectedSide = holder.side === "enemy" ? "己方" : "敌方";
+        return {
+          key: `${holder.id}-${holder.runtimeState.opponentPowerFixed}`,
+          side: holder.side,
+          text: `由于${holderSide}单位持有【认知失调】，${affectedSide}单位战斗时POWER被视为${holder.runtimeState.opponentPowerFixed}。`,
+        };
+      });
+  }, [enemyConfirm, allUnits, selectedAttacker, selectedTarget]);
   const canUseTimeElapseInConfirm = !!(
     enemyConfirm
     && battle?.status === "ENEMY_CONFIRM"
@@ -1782,6 +1981,7 @@ export default function LibraryRun1View({ gameState, onAction }) {
     && unit.alive
     && modelIsPlayerCommandable(unit)
     && !enemyConfirm
+    && !battleEventPage
   );
 
   const isTargetCandidate = (unit, attacker = selectedAttacker) => !!(
@@ -1790,6 +1990,7 @@ export default function LibraryRun1View({ gameState, onAction }) {
     && unit
     && unit.alive
     && !enemyConfirm
+    && !battleEventPage
     && modelIsManualTargetable(unit)
     && modelCanPlayerChooseTarget(battle, attacker, unit)
   );
@@ -1801,6 +2002,7 @@ export default function LibraryRun1View({ gameState, onAction }) {
     && selectedTarget.alive
     && battle?.status === "PLAYER_TURN"
     && !enemyConfirm
+    && !battleEventPage
     && !activeSkillOverlay
     && isTargetCandidate(selectedTarget, selectedAttacker)
   );
@@ -1834,7 +2036,7 @@ export default function LibraryRun1View({ gameState, onAction }) {
   };
 
   const beginSpaceReorg = (skill) => {
-    if (!(skill && battle?.status === "PLAYER_TURN" && !enemyConfirm)) {
+    if (!(skill && battle?.status === "PLAYER_TURN" && !enemyConfirm) || battleEventPage) {
       return;
     }
     clearSkillTimers();
@@ -1868,7 +2070,7 @@ export default function LibraryRun1View({ gameState, onAction }) {
   };
 
   const beginTimeElapse = (skill) => {
-      if (!(skill && canUseTimeElapseInConfirm) || timeElapseFx?.active) {
+      if (!(skill && canUseTimeElapseInConfirm) || timeElapseFx?.active || battleEventPage) {
         return;
       }
     clearSkillTimers();
@@ -2181,7 +2383,7 @@ export default function LibraryRun1View({ gameState, onAction }) {
       {isStoryPhase ? (
         <StoryView gameState={gameState} onAction={onAction} music={music} />
       ) : isModeSelectPhase ? (
-        <ModeSelectOverlay onPick={(mode) => onAction("select-mode", { mode })} />
+        <ModeSelectOverlay onPick={(mode, jumpTarget) => onAction("select-mode", { mode, jumpTarget })} />
       ) : (
         <div className="battle-shell">
           <div className="battle-layout">
@@ -2200,6 +2402,18 @@ export default function LibraryRun1View({ gameState, onAction }) {
                 skippedBadge={skippedTurnBadge}
               />
               <ArrowLayer arrow={spaceReorg?.active ? null : arrow} />
+              {dissonanceWarnings.length > 0 ? (
+                <div className="dissonance-notice-stack">
+                  {dissonanceWarnings.map((warning) => (
+                    <div
+                      key={warning.key}
+                      className={`dissonance-notice ${warning.side === "enemy" ? "enemy-side" : "player-side"}`.trim()}
+                    >
+                      {warning.text}
+                    </div>
+                  ))}
+                </div>
+              ) : null}
               <div className={`row enemy-row ${hasHighlight(guideStep, "area", "enemy-row") ? "guide-glow" : ""}`.trim()}>
                 {enemyUnits.map((unit) => (
                   <UnitCell
@@ -2227,27 +2441,32 @@ export default function LibraryRun1View({ gameState, onAction }) {
                     spaceReorgTarget={spaceReorg?.targetId === unit.id}
                     virusStateOverride={getDisplayedVirusState(unit)}
                     timeSkipHighlight={skippedTurnUnitId === unit.id}
+                    stage3CurrentAttacker={stage3CurrentAttackerId === unit.id}
+                    stage3UpcomingCoop={stage3UpcomingCoopIds.includes(unit.id)}
                     registerRef={registerNode(unit.id)}
                   />
                 ))}
               </div>
 
               <div className={`stage-middle ${hasHighlight(guideStep, "area", "center-feed") ? "guide-glow" : ""}`.trim()}>
+                <Stage3TimeLoopOverlay battle={displayBattle} />
                 {selectionNotice ? (
                   <div className="selection-notice fade-in">
                     {selectionNotice}
                   </div>
                 ) : null}
-                <div className="center-feed">
-                  {centerFeed.map((item) => (
-                    <div key={item.key} className={`feed-line ${item.type}`}>
-                      {item.text}
-                    </div>
-                  ))}
-                </div>
+                {battle?.stageId === "stage3-core" ? null : (
+                  <div className="center-feed">
+                    {centerFeed.map((item) => (
+                      <div key={item.key} className={`feed-line ${item.type}`}>
+                        {item.text}
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
 
-              <div className={`row player-row ${hasHighlight(guideStep, "area", "player-row") ? "guide-glow" : ""}`.trim()}>
+              <div className={`row player-row ${stage3PlayerRowScrollable ? "scroll-x-stage3" : ""} ${hasHighlight(guideStep, "area", "player-row") ? "guide-glow" : ""}`.trim()}>
                 {playerUnits.map((unit) => {
                   const isDisguise = modelGetUnitDisplayMode(unit) === "split";
                   return (
@@ -2284,6 +2503,7 @@ export default function LibraryRun1View({ gameState, onAction }) {
                 })}
               </div>
               <GuideCard step={guideStep} onNext={() => onAction("next-guide", {})} />
+              <BattleEventCard page={battleEventPage} onNext={() => onAction("next-battle-event", {})} />
             </section>
 
             <SidePanel
@@ -2303,7 +2523,7 @@ export default function LibraryRun1View({ gameState, onAction }) {
                   beginTimeElapse(skill);
                 }
               }}
-                skillLocked={!!spaceReorg?.active || !!timeElapseFx?.active}
+                skillLocked={!!spaceReorg?.active || !!timeElapseFx?.active || !!battleEventPage}
                 guideStep={guideStep}
               />
           </div>
@@ -2850,6 +3070,37 @@ function StyleBlock() {
         align-self: end;
       }
 
+      .row.scroll-x-stage3 {
+        justify-content: flex-start;
+        overflow-x: auto;
+        overflow-y: visible;
+        scrollbar-width: thin;
+        scrollbar-color: rgba(118, 215, 255, 0.78) rgba(10, 26, 52, 0.34);
+        padding: 0.2rem 0.6rem 0.45rem;
+      }
+
+      .row.scroll-x-stage3::-webkit-scrollbar {
+        height: 8px;
+      }
+
+      .row.scroll-x-stage3::-webkit-scrollbar-track {
+        background: rgba(10, 26, 52, 0.34);
+        border-radius: 999px;
+      }
+
+      .row.scroll-x-stage3::-webkit-scrollbar-thumb {
+        background: linear-gradient(180deg, rgba(96, 205, 255, 0.86), rgba(146, 233, 255, 0.94));
+        border-radius: 999px;
+      }
+
+      .row.scroll-x-stage3:hover::-webkit-scrollbar-thumb {
+        background: linear-gradient(180deg, rgba(126, 219, 255, 0.94), rgba(182, 242, 255, 1));
+      }
+
+      .row.scroll-x-stage3::-webkit-scrollbar-corner {
+        background: transparent;
+      }
+
       .stage-middle {
         position: relative;
         z-index: 6;
@@ -2884,7 +3135,7 @@ function StyleBlock() {
         width: 100%;
         height: 100%;
         pointer-events: none;
-        z-index: 8;
+        z-index: 12;
         overflow: visible;
       }
 
@@ -3012,6 +3263,43 @@ function StyleBlock() {
           0 0 0 1px rgba(255, 205, 158, 0.18),
           0 0 24px rgba(255, 112, 64, 0.26);
         pointer-events: none;
+      }
+
+      .dissonance-notice-stack {
+        position: absolute;
+        left: 50%;
+        top: calc(50% - 7.2rem);
+        transform: translateX(-50%);
+        width: min(760px, calc(100% - 1rem));
+        display: flex;
+        flex-direction: column;
+        gap: 0.44rem;
+        z-index: 14;
+        pointer-events: none;
+      }
+
+      .dissonance-notice {
+        padding: 0.68rem 1.08rem;
+        border-radius: 16px;
+        border: 1px solid rgba(255, 132, 132, 0.58);
+        background: rgba(90, 12, 14, 0.88);
+        color: rgba(255, 232, 232, 0.98);
+        font-size: 0.96rem;
+        line-height: 1.38;
+        letter-spacing: 0.03em;
+        text-align: center;
+        box-shadow:
+          0 0 0 1px rgba(255, 180, 180, 0.1),
+          0 0 28px rgba(255, 74, 74, 0.2);
+        text-shadow: 0 0 12px rgba(255, 88, 88, 0.22);
+      }
+
+      .dissonance-notice.player-side {
+        transform: translateY(-1.2rem);
+      }
+
+      .dissonance-notice.enemy-side {
+        transform: translateY(1.9rem);
       }
 
       .overlay-card.tips-card {
@@ -3249,6 +3537,58 @@ function StyleBlock() {
         text-rendering: geometricPrecision;
       }
 
+      .battle-event-card {
+        position: absolute;
+        inset: 50% auto auto 50%;
+        transform: translate(-50%, -50%);
+        width: min(42rem, calc(100% - 2rem));
+        border-radius: 1.6rem;
+        border: 1px solid rgba(244, 221, 170, 0.52);
+        background: linear-gradient(180deg, rgba(9, 20, 38, 0.95), rgba(8, 16, 30, 0.9));
+        box-shadow: 0 0 0 1px rgba(255, 232, 189, 0.12), 0 1.6rem 3rem rgba(0, 0, 0, 0.34);
+        padding: 1.3rem 1.5rem 1.15rem;
+        text-align: left;
+        z-index: 26;
+        cursor: pointer;
+      }
+
+      .battle-event-card.tone-red {
+        border-color: rgba(255, 118, 118, 0.56);
+        box-shadow: 0 0 0 1px rgba(255, 116, 116, 0.16), 0 1.6rem 3rem rgba(43, 0, 0, 0.4);
+      }
+
+      .battle-event-speaker {
+        font-size: 0.84rem;
+        letter-spacing: 0.18em;
+        color: rgba(246, 223, 179, 0.82);
+        margin-bottom: 0.72rem;
+      }
+
+      .battle-event-card.tone-red .battle-event-speaker,
+      .battle-event-card.tone-red .battle-event-hint {
+        color: rgba(255, 160, 160, 0.92);
+      }
+
+      .battle-event-copy {
+        display: grid;
+        gap: 0.72rem;
+        font-size: 1.04rem;
+        line-height: 1.92;
+        color: rgba(241, 247, 255, 0.96);
+      }
+
+      .battle-event-copy p {
+        margin: 0;
+      }
+
+      .battle-event-hint {
+        margin-top: 0.92rem;
+        text-align: right;
+        font-size: 0.76rem;
+        letter-spacing: 0.14em;
+        color: rgba(244, 223, 178, 0.78);
+      }
+
       .unit-cell {
         position: relative;
         flex: 0 0 104px;
@@ -3301,6 +3641,203 @@ function StyleBlock() {
         background: rgba(61, 82, 102, 0.16);
         box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
         overflow: hidden;
+      }
+
+      .stage3-polarity-frame {
+        position: absolute;
+        inset: 0;
+        border-radius: inherit;
+        pointer-events: none;
+        z-index: 0;
+      }
+
+      .stage3-polarity-frame::before {
+        content: "";
+        position: absolute;
+        inset: 0;
+        border-radius: inherit;
+        border: 2px solid transparent;
+      }
+
+      .stage3-polarity-frame::after {
+        content: "";
+        position: absolute;
+        top: 10px;
+        bottom: 10px;
+        right: 4px;
+        width: 6px;
+        border-radius: 999px;
+        opacity: 0.9;
+      }
+
+      .stage3-polarity-frame.upright::before {
+        border-image: linear-gradient(to top, rgba(98, 255, 166, 0.95), rgba(240, 247, 255, 0.98)) 1;
+        box-shadow: inset 0 0 18px rgba(160, 255, 204, 0.08);
+      }
+
+      .stage3-polarity-frame.upright::after {
+        background: linear-gradient(180deg, rgba(240, 255, 250, 0), rgba(132, 255, 196, 0.94), rgba(240, 255, 250, 0));
+        box-shadow: 0 0 14px rgba(122, 255, 190, 0.35);
+        animation: stage3-upright-rail 2.8s linear infinite;
+      }
+
+      .stage3-polarity-frame.reversed::before {
+        border-image: linear-gradient(to bottom, rgba(255, 120, 120, 0.96), rgba(243, 247, 255, 0.98)) 1;
+        box-shadow: inset 0 0 18px rgba(255, 156, 156, 0.08);
+      }
+
+      .stage3-polarity-frame.reversed::after {
+        background: linear-gradient(180deg, rgba(255, 246, 246, 0), rgba(255, 132, 132, 0.94), rgba(255, 246, 246, 0));
+        box-shadow: 0 0 14px rgba(255, 126, 126, 0.35);
+        animation: stage3-reversed-rail 2.8s linear infinite;
+      }
+
+      .stage3-polarity-frame.balanced::before {
+        border: 2px solid rgba(248, 252, 255, 0.9);
+        box-shadow: none;
+      }
+
+      .stage3-polarity-frame.balanced::after {
+        display: none;
+      }
+
+      .stage3-turn-attacker-badge {
+        position: absolute;
+        left: 50%;
+        top: -12px;
+        transform: translateX(-50%);
+        z-index: 7;
+        padding: 0.22rem 0.58rem;
+        border-radius: 999px;
+        border: 1px solid rgba(255, 240, 176, 0.6);
+        background: linear-gradient(180deg, rgba(67, 51, 14, 0.94), rgba(47, 34, 7, 0.96));
+        color: rgba(255, 243, 188, 0.98);
+        font-size: 0.6rem;
+        font-weight: 800;
+        letter-spacing: 0.04em;
+        line-height: 1;
+        white-space: nowrap;
+        box-shadow:
+          0 0 20px rgba(255, 223, 122, 0.24),
+          0 0 40px rgba(255, 246, 209, 0.14);
+        text-shadow: 0 0 10px rgba(255, 239, 182, 0.24);
+        animation: stage3-turn-attacker-pulse 1.8s ease-in-out infinite alternate;
+      }
+
+      .stage3-turn-attacker-badge.coop {
+        border-color: rgba(255, 229, 148, 0.52);
+        background: linear-gradient(180deg, rgba(73, 62, 22, 0.94), rgba(52, 42, 12, 0.96));
+        color: rgba(255, 243, 186, 0.98);
+        box-shadow:
+          0 0 18px rgba(255, 221, 112, 0.22),
+          0 0 34px rgba(255, 239, 184, 0.12);
+      }
+
+      .stage3-loop-overlay {
+        position: absolute;
+        left: 2.2rem;
+        right: 2.2rem;
+        top: 1.4rem;
+        z-index: 1;
+        pointer-events: none;
+      }
+
+      .stage3-loop-label {
+        margin-bottom: 0.4rem;
+        color: rgba(222, 240, 255, 0.9);
+        font-size: 0.78rem;
+        letter-spacing: 0.08em;
+        text-shadow: 0 0 14px rgba(94, 181, 255, 0.26);
+      }
+
+      .stage3-loop-row {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) 4rem minmax(0, 1fr);
+        align-items: center;
+      }
+
+      .stage3-loop-group {
+        display: grid;
+        grid-template-columns: repeat(5, minmax(0, 1fr));
+        gap: 0.54rem;
+      }
+
+      .stage3-loop-slot {
+        position: relative;
+        min-height: 4.8rem;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        border-radius: 1rem;
+        border: 1px solid rgba(255, 255, 255, 0.12);
+        background: rgba(10, 19, 36, 0.18);
+      }
+
+      .stage3-loop-number {
+        font-size: clamp(2.8rem, 3.7vw, 4.25rem);
+        line-height: 1;
+        font-weight: 800;
+        color: rgba(82, 170, 255, 0.94);
+        text-shadow:
+          0 0 18px rgba(52, 156, 255, 0.26),
+          0 0 34px rgba(42, 132, 255, 0.14);
+      }
+
+      .stage3-loop-slot.protect {
+        background:
+          linear-gradient(180deg, rgba(132, 255, 198, 0.34), rgba(42, 155, 105, 0.22)),
+          rgba(10, 19, 36, 0.24);
+        border-color: rgba(112, 255, 183, 0.52);
+        box-shadow:
+          inset 0 0 0 1px rgba(168, 255, 211, 0.22),
+          0 0 20px rgba(88, 255, 182, 0.12);
+      }
+
+      .stage3-loop-slot.destroy {
+        background:
+          linear-gradient(180deg, rgba(255, 130, 130, 0.34), rgba(184, 42, 42, 0.22)),
+          rgba(10, 19, 36, 0.24);
+        border-color: rgba(255, 116, 116, 0.56);
+        box-shadow:
+          inset 0 0 0 1px rgba(255, 170, 170, 0.2),
+          0 0 20px rgba(255, 92, 92, 0.16);
+      }
+
+      .stage3-loop-slot.protect.destroy {
+        background:
+          linear-gradient(135deg, rgba(132, 255, 198, 0.3) 0%, rgba(132, 255, 198, 0.3) 50%, rgba(255, 130, 130, 0.3) 50%, rgba(255, 130, 130, 0.3) 100%),
+          rgba(10, 19, 36, 0.24);
+        border-color: rgba(255, 215, 150, 0.56);
+      }
+
+      .unit-cell.stage3-turn-attacker .unit-shell {
+        box-shadow:
+          inset 0 1px 0 rgba(255, 255, 255, 0.06),
+          0 0 22px rgba(255, 136, 120, 0.32),
+          0 0 44px rgba(255, 92, 66, 0.22);
+        animation: stage3-turn-attacker-glow 2.2s ease-in-out infinite;
+      }
+
+      .unit-cell.stage3-turn-attacker .unit-shell::before {
+        content: "";
+        position: absolute;
+        inset: 0;
+        border-radius: inherit;
+        pointer-events: none;
+        background:
+          radial-gradient(circle at 50% 22%, rgba(255, 170, 138, 0.32), rgba(255, 112, 82, 0.16) 36%, rgba(255, 86, 58, 0) 74%),
+          linear-gradient(180deg, rgba(255, 118, 84, 0.16), rgba(255, 92, 66, 0.08) 46%, rgba(255, 92, 66, 0) 100%);
+        mix-blend-mode: screen;
+        opacity: 0.88;
+        animation: stage3-turn-attacker-aura 2.2s ease-in-out infinite;
+      }
+
+      .unit-cell.stage3-upcoming-coop .unit-shell {
+        box-shadow:
+          inset 0 1px 0 rgba(255, 255, 255, 0.06),
+          0 0 18px rgba(255, 214, 104, 0.24),
+          0 0 36px rgba(255, 228, 160, 0.16);
+        animation: stage3-upcoming-coop-glow 2.2s ease-in-out infinite;
       }
 
       .space-reorg-inner {
@@ -3607,6 +4144,18 @@ function StyleBlock() {
         background: rgba(255, 125, 66, 0.12);
       }
 
+      .buff-chip.revive-lock {
+        padding: 0;
+        border: none;
+        border-radius: 0;
+        background: transparent;
+        color: rgba(255, 214, 153, 0.92);
+        max-width: 3.6rem;
+        line-height: 1.05;
+        text-align: center;
+        white-space: normal;
+      }
+
       .description-line + .description-line {
         margin-top: 0.24rem;
       }
@@ -3724,6 +4273,11 @@ function StyleBlock() {
         border: 1px solid rgba(136, 228, 255, 0.2);
         background: rgba(19, 49, 86, 0.28);
         color: rgba(231, 248, 255, 0.9);
+      }
+
+      .panel-copy.description-line.alert {
+        color: rgba(255, 150, 150, 0.94);
+        text-shadow: 0 0 14px rgba(255, 72, 72, 0.16);
       }
 
       .context-key {
@@ -3951,6 +4505,12 @@ function StyleBlock() {
         background: rgba(5, 15, 34, 0.94);
       }
 
+      .overlay-card.outcome-card.tone-red .panel-title,
+      .overlay-card.outcome-card.tone-red .panel-copy {
+        color: rgba(255, 152, 152, 0.96);
+        text-shadow: 0 0 16px rgba(255, 74, 74, 0.18);
+      }
+
       .mode-select-mask {
         z-index: 24;
       }
@@ -3965,6 +4525,66 @@ function StyleBlock() {
         grid-template-columns: repeat(2, minmax(0, 1fr));
         gap: 0.9rem;
         margin-top: 1rem;
+      }
+
+      .mode-jump-row {
+        display: grid;
+        grid-template-columns: auto minmax(0, 1fr);
+        gap: 0.9rem;
+        align-items: start;
+        margin-top: 1rem;
+      }
+
+      .mode-jump-label {
+        padding-top: 0.34rem;
+        font-size: 0.78rem;
+        letter-spacing: 0.16em;
+        color: rgba(171, 222, 244, 0.78);
+      }
+
+      .mode-jump-options {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.42rem 0.56rem;
+      }
+
+      .mode-jump-chip {
+        appearance: none;
+        border: 0;
+        background: transparent;
+        color: rgba(201, 232, 244, 0.8);
+        display: inline-flex;
+        align-items: center;
+        gap: 0.36rem;
+        padding: 0.18rem 0.24rem;
+        border-radius: 999px;
+        cursor: pointer;
+      }
+
+      .mode-jump-dot {
+        width: 0.62rem;
+        height: 0.62rem;
+        border-radius: 999px;
+        border: 1px solid rgba(148, 216, 255, 0.46);
+        background: rgba(13, 31, 56, 0.56);
+        box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.04);
+        flex: 0 0 auto;
+      }
+
+      .mode-jump-text {
+        font-size: 0.72rem;
+        line-height: 1.2;
+        letter-spacing: 0.08em;
+      }
+
+      .mode-jump-chip.active {
+        color: rgba(255, 236, 200, 0.96);
+      }
+
+      .mode-jump-chip.active .mode-jump-dot {
+        border-color: rgba(255, 219, 140, 0.72);
+        background: radial-gradient(circle at 30% 30%, rgba(255, 242, 198, 0.96), rgba(255, 186, 66, 0.74));
+        box-shadow: 0 0 12px rgba(255, 205, 110, 0.3);
       }
 
       .mode-option {
@@ -4838,6 +5458,99 @@ function StyleBlock() {
         100% {
           opacity: 0;
           transform: translateY(-18px) scale(0.96);
+        }
+      }
+
+      @keyframes stage3-upright-rail {
+        0% {
+          transform: translateY(110%);
+          opacity: 0;
+        }
+        18% {
+          opacity: 0.92;
+        }
+        100% {
+          transform: translateY(-110%);
+          opacity: 0;
+        }
+      }
+
+      @keyframes stage3-reversed-rail {
+        0% {
+          transform: translateY(-110%);
+          opacity: 0;
+        }
+        18% {
+          opacity: 0.92;
+        }
+        100% {
+          transform: translateY(110%);
+          opacity: 0;
+        }
+      }
+
+      @keyframes stage3-turn-attacker-pulse {
+        0% {
+          opacity: 0.76;
+          transform: translateX(-50%) translateY(0);
+        }
+        100% {
+          opacity: 1;
+          transform: translateX(-50%) translateY(-2px);
+        }
+      }
+
+      @keyframes stage3-turn-attacker-glow {
+        0% {
+          box-shadow:
+            inset 0 1px 0 rgba(255, 255, 255, 0.06),
+            0 0 12px rgba(255, 126, 108, 0.14),
+            0 0 20px rgba(255, 90, 72, 0.08);
+        }
+        50% {
+          box-shadow:
+            inset 0 1px 0 rgba(255, 255, 255, 0.08),
+            0 0 28px rgba(255, 142, 124, 0.38),
+            0 0 50px rgba(255, 102, 78, 0.24);
+        }
+        100% {
+          box-shadow:
+            inset 0 1px 0 rgba(255, 255, 255, 0.06),
+            0 0 18px rgba(255, 126, 108, 0.18),
+            0 0 28px rgba(255, 90, 72, 0.1);
+        }
+      }
+
+      @keyframes stage3-turn-attacker-aura {
+        0% {
+          opacity: 0.52;
+        }
+        45% {
+          opacity: 0.96;
+        }
+        100% {
+          opacity: 0.68;
+        }
+      }
+
+      @keyframes stage3-upcoming-coop-glow {
+        0% {
+          box-shadow:
+            inset 0 1px 0 rgba(255, 255, 255, 0.06),
+            0 0 10px rgba(255, 215, 118, 0.12),
+            0 0 18px rgba(255, 236, 166, 0.06);
+        }
+        50% {
+          box-shadow:
+            inset 0 1px 0 rgba(255, 255, 255, 0.08),
+            0 0 24px rgba(255, 225, 132, 0.3),
+            0 0 42px rgba(255, 241, 182, 0.2);
+        }
+        100% {
+          box-shadow:
+            inset 0 1px 0 rgba(255, 255, 255, 0.06),
+            0 0 14px rgba(255, 215, 118, 0.16),
+            0 0 24px rgba(255, 236, 166, 0.1);
         }
       }
 

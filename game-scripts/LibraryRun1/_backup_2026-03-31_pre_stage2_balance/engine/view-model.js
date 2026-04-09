@@ -1,41 +1,146 @@
-const { BUFF_CATALOG, VIRUS_BUFF } = require("../data/buffs");
+const {
+  BUFF_CATALOG,
+  VIRUS_BUFF,
+  COGNITIVE_DISSONANCE_BUFF,
+  TIME_LOOP_BUFF,
+} = require("../data/buffs");
 const { getUnitDefinition } = require("../data/units/catalog");
 
 function cloneValue(value) {
   return JSON.parse(JSON.stringify(value));
 }
 
+function getAllUnits(battle) {
+  return [...(battle?.playerUnits || []), ...(battle?.enemyUnits || [])];
+}
+
 function findUnit(battle, unitId) {
   if (!(battle && unitId)) {
     return null;
   }
-  return [...(battle.playerUnits || []), ...(battle.enemyUnits || [])]
-    .find((unit) => unit.id === unitId) || null;
+  return getAllUnits(battle).find((unit) => unit.id === unitId) || null;
 }
 
 function getDefinitionForUnit(unit) {
   return getUnitDefinition(unit?.abilityCode || unit?.code);
 }
 
-const VIEW_RUNTIME_HELPERS = {
-  findUnit,
-};
+function hasBuff(unit, buffKey) {
+  return !!(unit?.buffs?.[buffKey] > 0);
+}
 
-function hasVirus(unit) {
-  return !!(unit?.buffs?.[VIRUS_BUFF] || 0);
+function hasActiveVirus(unit) {
+  return hasBuff(unit, VIRUS_BUFF) && !!unit?.runtimeState?.virusActivated;
+}
+
+function hasAnyBuff(unit) {
+  return Object.values(unit?.buffs || {}).some((value) => value > 0);
 }
 
 function getControlSide(unit) {
   if (!unit) {
     return null;
   }
-  if (hasVirus(unit)) {
+  if (hasActiveVirus(unit)) {
     return unit.side === "enemy" ? "player" : "enemy";
   }
   return unit.side;
 }
 
-function getBuffDescriptions(unit) {
+function resolvePriorityReferenceSide(reference) {
+  if (!reference) {
+    return null;
+  }
+  if (typeof reference === "string") {
+    return reference;
+  }
+  return getControlSide(reference);
+}
+
+function priorityCompare(a, b, reference = null) {
+  const referenceSide = resolvePriorityReferenceSide(reference);
+  if (referenceSide) {
+    const aIsEnemy = getControlSide(a) !== referenceSide;
+    const bIsEnemy = getControlSide(b) !== referenceSide;
+    if (aIsEnemy !== bIsEnemy) {
+      return aIsEnemy ? -1 : 1;
+    }
+  }
+  if (a.side !== b.side) {
+    return a.side === "enemy" ? -1 : 1;
+  }
+  return a.slot - b.slot;
+}
+
+function pickByPriority(units, reference = null) {
+  return [...units].sort((a, b) => priorityCompare(a, b, reference))[0] || null;
+}
+
+function pickByPower(units, mode, reference = null) {
+  if (!units.length) {
+    return null;
+  }
+  const values = units.map((unit) => unit.power);
+  const targetPower = mode === "highest" ? Math.max(...values) : Math.min(...values);
+  return pickByPriority(units.filter((unit) => unit.power === targetPower), reference);
+}
+
+function getFriendlySupportUnits(battle, self, controllerSide = self.side) {
+  return getAllUnits(battle)
+    .filter((unit) => unit.alive)
+    .filter((unit) => getControlSide(unit) === controllerSide);
+}
+
+function canUnitBeTargetedBy(attacker, target) {
+  if (!(attacker && attacker.alive && target && target.alive) || attacker.id === target.id) {
+    return false;
+  }
+  if (getDefinitionForUnit(target).display?.combatTargetable === false) {
+    return false;
+  }
+  if (!hasActiveVirus(target)) {
+    return true;
+  }
+  const originalEnemySide = target.side === "enemy" ? "player" : "enemy";
+  return getControlSide(attacker) !== originalEnemySide;
+}
+
+const VIEW_RUNTIME_HELPERS = {
+  findUnit,
+};
+
+const TARGET_RULE_RUNTIME = {
+  getAllUnits,
+  canUnitBeTargetedBy,
+  pickByPower,
+  pickByPriority,
+  getFriendlySupportUnits: (state, self, controllerSide) => (
+    getFriendlySupportUnits(state.battle, self, controllerSide)
+  ),
+  hasBuff,
+  hasAnyBuff,
+};
+
+function getDerivedBuffKeys(unit) {
+  const derived = [];
+  if (unit?.runtimeState?.opponentPowerFixed != null) {
+    derived.push(COGNITIVE_DISSONANCE_BUFF);
+  }
+  if (Array.isArray(unit?.runtimeState?.stage3TimeLoops) && unit.runtimeState.stage3TimeLoops.length > 0) {
+    derived.push(TIME_LOOP_BUFF);
+  }
+  return derived;
+}
+
+function getAllBuffKeys(unit) {
+  const actual = Object.values(BUFF_CATALOG)
+    .filter((buff) => !buff.derived)
+    .filter((buff) => (unit?.buffs?.[buff.key] || 0) > 0)
+    .map((buff) => buff.key);
+  return [...new Set([...actual, ...getDerivedBuffKeys(unit)])];
+}
+
+function getBuffDescriptionsLegacy(unit) {
   if (!unit?.buffs) {
     return [];
   }
@@ -45,7 +150,7 @@ function getBuffDescriptions(unit) {
     .map((buff) => `【${buff.shortLabel}】${buff.description}`);
 }
 
-function getBuffShortLabels(unit) {
+function getBuffShortLabelsLegacy(unit) {
   if (!unit?.buffs) {
     return [];
   }
@@ -143,21 +248,144 @@ function isPlayerCommandable(unit) {
   return getControlSide(unit) === "player";
 }
 
-function canPlayerChooseTarget(attacker, unit) {
-  if (!(attacker && attacker.alive && unit && unit.alive) || attacker.id === unit.id) {
+function getForcedTargetId(battle, attacker) {
+  if (!(battle && attacker && attacker.alive)) {
+    return null;
+  }
+
+  const targetRule = getDefinitionForUnit(attacker).manualTargetRule;
+  if (typeof targetRule !== "function") {
+    return null;
+  }
+
+  const candidates = getAllUnits(battle)
+    .filter((unit) => unit.id !== attacker.id)
+    .filter((unit) => unit.alive)
+    .filter((unit) => getDefinitionForUnit(unit).display?.manualTargetable !== false)
+    .filter((unit) => targetRule(TARGET_RULE_RUNTIME, { battle }, {
+      self: attacker,
+      target: unit,
+    }));
+
+  return pickByPriority(candidates, attacker)?.id || null;
+}
+
+function canPlayerChooseTarget(battle, attacker, unit) {
+  if (!(battle && attacker && attacker.alive && unit && unit.alive) || attacker.id === unit.id) {
     return false;
   }
   const definition = getDefinitionForUnit(unit);
   if (definition.display?.manualTargetable === false) {
     return false;
   }
+
+  const targetRule = getDefinitionForUnit(attacker).manualTargetRule;
+  const forcedTargetId = getForcedTargetId(battle, attacker);
+  if (typeof targetRule === "function") {
+    return !!forcedTargetId && forcedTargetId === unit.id;
+  }
+  if (forcedTargetId) {
+    return forcedTargetId === unit.id;
+  }
+
   return getControlSide(unit) !== getControlSide(attacker)
     || definition.display?.enemyLikeForPlayerTarget === true;
 }
 
+function getVirusState(unit) {
+  if (!hasBuff(unit, VIRUS_BUFF)) {
+    return null;
+  }
+  return hasActiveVirus(unit) ? "active" : "latent";
+}
+
+function hasLockedTarget(unit) {
+  return typeof getDefinitionForUnit(unit).manualTargetRule === "function";
+}
+
+function getUnitActiveSkills(unit, battle) {
+  if (!unit) {
+    return [];
+  }
+  const activeSkills = getDefinitionForUnit(unit).activeSkills || [];
+  return activeSkills.map((skill) => ({
+    ...cloneValue(skill),
+    used: !!battle?.activeSkillUsage?.[skill.key],
+  }));
+}
+
+function getStage3Polarity(unit) {
+  if (!(unit?.runtimeState?.stage3Seal || unit?.runtimeState?.stage3Book) || !unit.alive) {
+    return null;
+  }
+  if (unit.power >= 1 && unit.power <= 4) {
+    return "upright";
+  }
+  if (unit.power >= 6 && unit.power <= 9) {
+    return "reversed";
+  }
+  return "balanced";
+}
+
+function getBuffDescriptions(unit) {
+  if (!unit) {
+    return [];
+  }
+
+  return getAllBuffKeys(unit)
+    .map((buffKey) => BUFF_CATALOG[buffKey])
+    .filter(Boolean)
+    .map((buff) => `【${buff.shortLabel}】：${buff.description}`);
+}
+
+function getBuffShortLabels(unit) {
+  if (!unit) {
+    return [];
+  }
+
+  return getAllBuffKeys(unit)
+    .map((buffKey) => BUFF_CATALOG[buffKey])
+    .filter(Boolean)
+    .map((buff) => `【${buff.shortLabel}】`);
+}
+
+function buildBuffDescriptions(unit) {
+  if (!unit) {
+    return [];
+  }
+
+  return getAllBuffKeys(unit)
+    .map((buffKey) => BUFF_CATALOG[buffKey])
+    .filter(Boolean)
+    .map((buff) => {
+      if (buff.key === COGNITIVE_DISSONANCE_BUFF) {
+        const value = unit.runtimeState?.opponentPowerFixed;
+        return `【认知失调：${value}】：战斗时，对方 POWER 视为 ${value}。新的【认知失调】会覆盖旧的同类状态。`;
+      }
+      return `【${buff.shortLabel}】：${buff.description}`;
+    });
+}
+
+function buildBuffShortLabels(unit) {
+  if (!unit) {
+    return [];
+  }
+
+  return getAllBuffKeys(unit)
+    .map((buffKey) => BUFF_CATALOG[buffKey])
+    .filter(Boolean)
+    .map((buff) => {
+      if (buff.key === COGNITIVE_DISSONANCE_BUFF) {
+        const value = unit.runtimeState?.opponentPowerFixed;
+        return `【认知失调：${value}】`;
+      }
+      return `【${buff.shortLabel}】`;
+    });
+}
+
 module.exports = {
-  getBuffDescriptions,
-  getBuffShortLabels,
+  getBuffDescriptions: buildBuffDescriptions,
+  getBuffShortLabels: buildBuffShortLabels,
   getPowerDisplay,
   buildCenterFeed,
   buildDisplayBattle,
@@ -167,4 +395,9 @@ module.exports = {
   isPlayerVisibleEnemy,
   isPlayerCommandable,
   canPlayerChooseTarget,
+  getForcedTargetId,
+  getVirusState,
+  hasLockedTarget,
+  getUnitActiveSkills,
+  getStage3Polarity,
 };

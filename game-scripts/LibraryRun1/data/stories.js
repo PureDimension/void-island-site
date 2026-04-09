@@ -540,6 +540,14 @@ const STORY_SCENES = {
       ],
     },
   ],
+  "final-story": [
+    {
+      musicTrack: "finale",
+      paragraphs: [
+        "剧情占位符",
+      ],
+    },
+  ],
 };
 
 Object.values(STORY_SCENES).forEach((pages) => {

@@ -17,11 +17,20 @@ module.exports = {
   },
   lineup: {
     playerUnits: [
-      { template: "robot", id: "p-robot", slot: 2, side: "player", buffs: { mark: 1 } },
+      {
+        template: "robot",
+        templateByMode: {
+          story: "robot-stage2-story",
+          challenge: "robot",
+        },
+        id: "p-robot",
+        slot: 2,
+        side: "player",
+        buffs: { mark: 1 },
+      },
       { template: "lantern", id: "p-lantern", slot: 4, side: "player" },
       { template: "rattlesnake", id: "p-rattlesnake", slot: 6, side: "player" },
       { template: "phage", id: "p-phage", slot: 8, side: "player" },
-      { template: "fever-module", id: "p-fever-module", slot: 10, side: "player" },
       { template: "puzzle", id: "p-puzzle", slot: 12, side: "player" },
     ],
     enemyUnits: [
