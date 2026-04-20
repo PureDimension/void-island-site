@@ -284,6 +284,10 @@ function canPlayerChooseTarget(battle, attacker, unit) {
     return forcedTargetId === unit.id;
   }
 
+  if (getDefinitionForUnit(attacker).display?.canTargetFriendly === true) {
+    return true;
+  }
+
   return getControlSide(unit) !== getControlSide(attacker)
     || definition.display?.enemyLikeForPlayerTarget === true;
 }
@@ -314,10 +318,10 @@ function getStage3Polarity(unit) {
   if (!(unit?.runtimeState?.stage3Seal || unit?.runtimeState?.stage3Book) || !unit.alive) {
     return null;
   }
-  if (unit.power >= 0 && unit.power <= 4) {
+  if (unit.runtimeState?.stage3StanceSnapshot === "upright") {
     return "upright";
   }
-  if (unit.power >= 5 && unit.power <= 9) {
+  if (unit.runtimeState?.stage3StanceSnapshot === "reversed") {
     return "reversed";
   }
   return null;
@@ -391,9 +395,55 @@ function buildBuffShortLabels(unit, battle = null) {
   return labels;
 }
 
+function buildBuffDescriptionsUnified(unit, battle = null) {
+  if (!unit) {
+    return [];
+  }
+
+  const descriptions = getAllBuffKeys(unit)
+    .map((buffKey) => BUFF_CATALOG[buffKey])
+    .filter(Boolean)
+    .map((buff) => {
+      if (buff.key === COGNITIVE_DISSONANCE_BUFF) {
+        const value = unit.runtimeState?.opponentPowerFixed;
+        return `【认知失调：${value}】：当持有该状态的单位发生战斗时，对方 POWER 在攻击前、战斗中、攻击后都视为 ${value}。新的【认知失调】会覆盖旧的同类状态。`;
+      }
+      return `【${buff.shortLabel}】：${buff.description}`;
+    });
+
+  if (battle && unit.runtimeState?.stage3NoAttackTurn === battle.turn && unit.abilityCode !== "s3-alchemist-carter") {
+    descriptions.push("复活回合无法攻击：该单位于本回合开始时被卡特复活，本回合无法攻击或协同攻击。");
+  }
+
+  return descriptions;
+}
+
+function buildBuffShortLabelsUnified(unit, battle = null) {
+  if (!unit) {
+    return [];
+  }
+
+  const labels = getAllBuffKeys(unit)
+    .map((buffKey) => BUFF_CATALOG[buffKey])
+    .filter(Boolean)
+    .map((buff) => {
+      if (buff.key === COGNITIVE_DISSONANCE_BUFF) {
+        const value = unit.runtimeState?.opponentPowerFixed;
+        return `【认知失调：${value}】`;
+      }
+      return `【${buff.shortLabel}】`;
+    });
+
+  if (battle && unit.runtimeState?.stage3NoAttackTurn === battle.turn && unit.abilityCode !== "s3-alchemist-carter") {
+    labels.push("复活回合无法攻击");
+  }
+
+  return labels;
+}
+
 module.exports = {
-  getBuffDescriptions: buildBuffDescriptions,
-  getBuffShortLabels: buildBuffShortLabels,
+  getBuffDescriptions: buildBuffDescriptionsUnified,
+  getBuffShortLabels: buildBuffShortLabelsUnified,
   getPowerDisplay,
   buildCenterFeed,
   buildDisplayBattle,

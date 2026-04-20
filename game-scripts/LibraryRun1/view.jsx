@@ -110,6 +110,7 @@ function useStageMusic(gameState) {
   const audioRef = useRef(null);
   const sampleRef = useRef(null);
   const musicFxRef = useRef(null);
+  const musicFadeInRef = useRef(null);
   const suppressTrackNoticeKeyRef = useRef(null);
   const [enabled, setEnabled] = useState(true);
   const [isPlaying, setIsPlaying] = useState(false);
@@ -142,17 +143,39 @@ function useStageMusic(gameState) {
       return undefined;
     }
 
+    if (!track.fileName) {
+      if (musicFxRef.current) {
+        clearInterval(musicFxRef.current);
+        musicFxRef.current = null;
+      }
+      if (musicFadeInRef.current) {
+        clearInterval(musicFadeInRef.current);
+        musicFadeInRef.current = null;
+      }
+      audio.pause();
+      audio.currentTime = 0;
+      audio.removeAttribute("src");
+      audio.load();
+      setIsPlaying(false);
+      return undefined;
+    }
+
     let cancelled = false;
     if (musicFxRef.current) {
       clearInterval(musicFxRef.current);
       musicFxRef.current = null;
+    }
+    if (musicFadeInRef.current) {
+      clearInterval(musicFadeInRef.current);
+      musicFadeInRef.current = null;
     }
     audio.pause();
     audio.currentTime = 0;
     audio.src = buildAssetUrl(track.fileName);
     audio.loop = true;
     audio.preload = "auto";
-    audio.volume = 1;
+    const targetVolume = typeof track.volume === "number" ? track.volume : 1;
+    audio.volume = 0;
     audio.playbackRate = 1;
     if ("preservesPitch" in audio) {
       audio.preservesPitch = false;
@@ -180,6 +203,17 @@ function useStageMusic(gameState) {
             }
             setIsPlaying(true);
             maybeShowTrackNotice(track, setNotice);
+            const startedAt = Date.now();
+            musicFadeInRef.current = setInterval(() => {
+              const raw = Math.min((Date.now() - startedAt) / 3000, 1);
+              const eased = easeInOutCubic(raw);
+              audio.volume = targetVolume * eased;
+              if (raw >= 1) {
+                clearInterval(musicFadeInRef.current);
+                musicFadeInRef.current = null;
+                audio.volume = targetVolume;
+              }
+            }, 40);
           })
           .catch(() => {
             if (cancelled) {
@@ -206,6 +240,10 @@ function useStageMusic(gameState) {
 
     return () => {
       cancelled = true;
+      if (musicFadeInRef.current) {
+        clearInterval(musicFadeInRef.current);
+        musicFadeInRef.current = null;
+      }
       audio.pause();
       window.removeEventListener("pointerdown", resumeOnGesture);
       window.removeEventListener("keydown", resumeOnGesture);
@@ -229,6 +267,11 @@ function useStageMusic(gameState) {
   const toggle = () => {
     const audio = audioRef.current;
     if (!audio) {
+      return;
+    }
+    if (!track?.fileName) {
+      setEnabled((value) => !value);
+      setIsPlaying(false);
       return;
     }
     if (enabled && !audio.paused) {
@@ -276,15 +319,21 @@ function useStageMusic(gameState) {
     if (!audio || !enabled || !effect) {
       return;
     }
-    if (effect === "fade-out-slow" || effect === "slow-fade-out-long") {
+    if (effect === "fade-out-slow" || effect === "slow-fade-out-long" || effect === "fade-out-long") {
       if (musicFxRef.current) {
         clearInterval(musicFxRef.current);
         musicFxRef.current = null;
       }
+      if (musicFadeInRef.current) {
+        clearInterval(musicFadeInRef.current);
+        musicFadeInRef.current = null;
+      }
       const startVolume = audio.volume;
       const startRate = audio.playbackRate || 1;
       const shouldSlowRate = effect === "slow-fade-out-long";
-      const durationMs = shouldSlowRate ? 2600 : 2200;
+      const durationMs = effect === "fade-out-long"
+        ? 4200
+        : (shouldSlowRate ? 2600 : 2200);
       const startedAt = Date.now();
       if (shouldSlowRate) {
         if ("preservesPitch" in audio) {
@@ -370,9 +419,11 @@ function StoryView({ gameState, onAction, music }) {
   const page = gameState.story.pages[pageIndex];
   const [revealedCount, setRevealedCount] = useState(1);
   const [entryFx, setEntryFx] = useState(null);
+  const [sceneTransitionFx, setSceneTransitionFx] = useState(null);
   const entryKey = `${sceneId}:${pageIndex}`;
   const lastEntryFxKeyRef = useRef(null);
   const lastPageEffectKeyRef = useRef(null);
+  const pendingSceneAdvanceRef = useRef(null);
 
   useEffect(() => {
     setRevealedCount(1);
@@ -393,7 +444,7 @@ function StoryView({ gameState, onAction, music }) {
   }, [entryKey, music, page.musicEffect, page.sampleTrack]);
 
   useEffect(() => {
-    if (page.entryTransition !== "blood-entry") {
+    if (!page.entryTransition) {
       setEntryFx(null);
       return undefined;
     }
@@ -402,19 +453,50 @@ function StoryView({ gameState, onAction, music }) {
       return undefined;
     }
     lastEntryFxKeyRef.current = entryKey;
-    setEntryFx("blood-entry");
-    const timer = setTimeout(() => setEntryFx(null), 900);
+    setEntryFx(page.entryTransition);
+    const duration = page.entryTransition === "blood-entry" ? 900 : 1100;
+    const timer = setTimeout(() => setEntryFx(null), duration);
     return () => clearTimeout(timer);
   }, [entryKey, page.entryTransition]);
+
+  useEffect(() => {
+    if (!(sceneTransitionFx?.phase === "exit")) {
+      return undefined;
+    }
+    const duration = sceneTransitionFx.duration || 1300;
+    const timer = setTimeout(() => setSceneTransitionFx(null), duration);
+    return () => clearTimeout(timer);
+  }, [sceneTransitionFx]);
+
+  useEffect(() => () => {
+    if (pendingSceneAdvanceRef.current) {
+      clearTimeout(pendingSceneAdvanceRef.current);
+      pendingSceneAdvanceRef.current = null;
+    }
+  }, []);
 
   const done = revealedCount >= page.paragraphs.length;
 
   const handleAdvance = () => {
-    if (entryFx) {
+    if (entryFx || sceneTransitionFx) {
       return;
     }
     if (!done) {
       setRevealedCount((value) => Math.min(value + 1, page.paragraphs.length));
+      return;
+    }
+    if (page.exitTransition) {
+      const duration = page.exitTransitionDuration || 1300;
+      setSceneTransitionFx({
+        key: `${entryKey}:${page.exitTransition}`,
+        phase: "exit",
+        transition: page.exitTransition,
+        duration,
+      });
+      pendingSceneAdvanceRef.current = setTimeout(() => {
+        pendingSceneAdvanceRef.current = null;
+        onAction("next-story", {});
+      }, duration);
       return;
     }
     onAction("next-story", {});
@@ -425,6 +507,10 @@ function StoryView({ gameState, onAction, music }) {
       <div className="story-shell" onClick={handleAdvance} role="button" tabIndex={0}>
         <div className="story-noise" />
         {entryFx === "blood-entry" ? <div className="story-entry-bloodflash" /> : null}
+        {entryFx === "black-fade" ? <div className="story-scene-transition enter" /> : null}
+        {sceneTransitionFx ? (
+          <div className="story-scene-transition exit" />
+        ) : null}
         <div className={`story-page ${page.tone === "unlock-red" ? "tone-red" : ""}`.trim()}>
           <div className="story-index">{String(pageIndex + 1).padStart(2, "0")}</div>
           <div className="story-body">
@@ -663,6 +749,37 @@ function ResultOverlay({ finalResults }) {
         </div>
         {finalResults?.rating ? <p className="panel-copy">评级：{finalResults.rating}</p> : null}
         {finalResults?.reason ? <p className="panel-copy">{finalResults.reason}</p> : null}
+      </div>
+    </div>
+  );
+}
+
+function MemoryCrystalOverlay({ prompt, candidates, onChoose, onBack }) {
+  if (!prompt) {
+    return null;
+  }
+
+  return (
+    <div className="overlay-mask">
+      <div className="overlay-card outcome-card memory-crystal-card">
+        <button type="button" className="mini-button overlay-corner-button" onClick={onBack}>
+          BACK
+        </button>
+        <div className="panel-title">记忆结晶</div>
+        <p className="panel-copy">【记忆结晶触发，请选择一个友方单位】</p>
+        <div className="memory-crystal-grid">
+          {candidates.map((unit) => (
+            <button
+              key={unit.id}
+              type="button"
+              className="mini-button strong memory-crystal-choice"
+              onClick={() => onChoose(unit.id)}
+            >
+              <span>{unit.name}</span>
+              <span className="memory-crystal-cost">承担 {prompt.shadowPower} POWER</span>
+            </button>
+          ))}
+        </div>
       </div>
     </div>
   );
@@ -1083,8 +1200,8 @@ function CellMeta({ unit, gameState, virusStateOverride }) {
       </div>
       <div className="unit-name">{unit.name}</div>
       <div className="unit-tags">
-        {unit.tags.map((tag) => (
-          <span key={`${unit.id}-${tag}`} className="tag-chip">
+        {unit.tags.map((tag, index) => (
+          <span key={`${unit.id}-${index}-${tag}`} className="tag-chip">
             {TAG_SYMBOLS[tag] || tag}
           </span>
         ))}
@@ -1306,8 +1423,8 @@ function SidePanel({
               <div>
                 <div className="panel-title">{selectedUnit.name}</div>
                 <div className={`unit-tags side-tags ${hasHighlight(guideStep, "area", "unit-tags") ? "guide-glow-inline" : ""}`}>
-                  {selectedUnit.tags.map((tag) => (
-                    <span key={`${selectedUnit.id}-${tag}`} className="tag-chip large">
+                  {selectedUnit.tags.map((tag, index) => (
+                    <span key={`${selectedUnit.id}-${index}-${tag}`} className="tag-chip large">
                       {TAG_SYMBOLS[tag] || tag}
                     </span>
                   ))}
@@ -1519,6 +1636,13 @@ export default function LibraryRun1View({ gameState, onAction }) {
 
   const selectedAttacker = allUnits.find((unit) => unit.id === selectedAttackerId) || null;
   const selectedTarget = allUnits.find((unit) => unit.id === selectedTargetId) || null;
+  const memoryCrystalPrompt = battle?.memoryCrystalPrompt || null;
+  const memoryCrystalCandidates = useMemo(
+    () => (memoryCrystalPrompt?.candidateIds || [])
+      .map((unitId) => allUnits.find((unit) => unit.id === unitId))
+      .filter(Boolean),
+    [allUnits, memoryCrystalPrompt?.candidateIds]
+  );
   const activeSkillOverlay = (spaceReorg?.active || timeElapseFx?.active) ? (spaceReorg || timeElapseFx) : null;
   const forcedTargetId = selectedAttacker ? modelGetForcedTargetId(battle, selectedAttacker) : null;
   const stageTips = useMemo(() => getTipsForStage(battle?.stageId), [battle?.stageId]);
@@ -2534,6 +2658,14 @@ export default function LibraryRun1View({ gameState, onAction }) {
       {!isStoryPhase && !isModeSelectPhase && showRules ? <RulesOverlay rules={gameState.rulebook} onClose={() => setShowRules(false)} /> : null}
       {!isStoryPhase && !isModeSelectPhase && showTips ? <TipsOverlay items={tipItems} onSelect={handleTipSelect} onClose={() => setShowTips(false)} /> : null}
       {!isStoryPhase && !isModeSelectPhase && openTipItem ? <TipDetailOverlay item={openTipItem} onClose={() => setOpenTipId(null)} /> : null}
+      {!isStoryPhase && !isModeSelectPhase && memoryCrystalPrompt ? (
+        <MemoryCrystalOverlay
+          prompt={memoryCrystalPrompt}
+          candidates={memoryCrystalCandidates}
+          onChoose={(unitId) => onAction("resolve-memory-crystal", { unitId })}
+          onBack={() => onAction("undo", {})}
+        />
+      ) : null}
       {!isStoryPhase && !isModeSelectPhase && gameState.pendingDefeat ? (
         <FailureOverlay
           reason={gameState.pendingDefeat.reason}
@@ -2770,6 +2902,60 @@ function StyleBlock() {
         color: rgba(255, 229, 170, 0.78);
       }
 
+      .story-backdrop-prologue-base,
+      .story-backdrop-prologue-haze-a,
+      .story-backdrop-prologue-haze-b,
+      .story-backdrop-prologue-glow {
+        opacity: 1;
+      }
+
+      .story-backdrop-prologue-base {
+        background:
+          radial-gradient(circle at 48% 46%, rgba(188, 160, 255, 0.22), rgba(188, 160, 255, 0) 34%),
+          linear-gradient(180deg, rgba(27, 18, 58, 0.95), rgba(46, 26, 86, 0.92) 48%, rgba(18, 13, 42, 0.97));
+      }
+
+      .story-backdrop-prologue-haze-a {
+        background:
+          radial-gradient(circle at 18% 28%, rgba(211, 153, 255, 0.22), rgba(211, 153, 255, 0) 24%),
+          radial-gradient(circle at 76% 24%, rgba(135, 103, 255, 0.18), rgba(135, 103, 255, 0) 26%),
+          radial-gradient(circle at 58% 72%, rgba(242, 161, 255, 0.16), rgba(242, 161, 255, 0) 28%);
+        filter: blur(12px);
+        mix-blend-mode: screen;
+        animation: prologue-drift-a 19s ease-in-out infinite alternate;
+      }
+
+      .story-backdrop-prologue-haze-b {
+        background:
+          radial-gradient(circle at 70% 38%, rgba(255, 210, 248, 0.18), rgba(255, 210, 248, 0) 22%),
+          radial-gradient(circle at 30% 72%, rgba(143, 120, 255, 0.16), rgba(143, 120, 255, 0) 25%),
+          radial-gradient(circle at 50% 14%, rgba(218, 173, 255, 0.14), rgba(218, 173, 255, 0) 20%);
+        filter: blur(20px);
+        mix-blend-mode: screen;
+        animation: prologue-drift-b 24s ease-in-out infinite alternate;
+      }
+
+      .story-backdrop-prologue-glow {
+        background:
+          linear-gradient(120deg, rgba(255, 255, 255, 0) 18%, rgba(255, 243, 255, 0.08) 36%, rgba(255, 255, 255, 0) 54%),
+          linear-gradient(300deg, rgba(255, 255, 255, 0) 24%, rgba(220, 202, 255, 0.08) 42%, rgba(255, 255, 255, 0) 60%);
+        mix-blend-mode: screen;
+        animation: prologue-sheen 16s linear infinite;
+      }
+
+      .library-run-root.story-bg-prologue .story-index {
+        color: rgba(242, 231, 255, 0.78);
+      }
+
+      .library-run-root.story-bg-prologue .story-paragraph {
+        color: rgba(252, 246, 255, 0.97);
+        text-shadow: 0 0 18px rgba(186, 153, 255, 0.14);
+      }
+
+      .library-run-root.story-bg-prologue .story-hint {
+        color: rgba(235, 217, 255, 0.86);
+      }
+
       @keyframes blood-layer-dark {
         from {
           opacity: 0;
@@ -2850,6 +3036,45 @@ function StyleBlock() {
         }
       }
 
+      @keyframes prologue-drift-a {
+        0% {
+          transform: translate3d(-2%, -1%, 0) scale(1.02);
+        }
+        50% {
+          transform: translate3d(2%, 1%, 0) scale(1.05);
+        }
+        100% {
+          transform: translate3d(0%, 2%, 0) scale(1.03);
+        }
+      }
+
+      @keyframes prologue-drift-b {
+        0% {
+          transform: translate3d(2%, 1%, 0) scale(1.01);
+        }
+        50% {
+          transform: translate3d(-2%, -1%, 0) scale(1.04);
+        }
+        100% {
+          transform: translate3d(1%, -2%, 0) scale(1.02);
+        }
+      }
+
+      @keyframes prologue-sheen {
+        0% {
+          transform: translate3d(-12%, -8%, 0) scale(1.04);
+          opacity: 0.5;
+        }
+        50% {
+          transform: translate3d(10%, 6%, 0) scale(1.08);
+          opacity: 0.78;
+        }
+        100% {
+          transform: translate3d(-10%, 10%, 0) scale(1.05);
+          opacity: 0.52;
+        }
+      }
+
       @keyframes story-blood-entry {
         0% {
           opacity: 0;
@@ -2865,6 +3090,27 @@ function StyleBlock() {
           opacity: 0;
           transform: scale(1);
           filter: saturate(0.96) brightness(0.92);
+        }
+      }
+
+      @keyframes story-scene-blackout-out {
+        0% {
+          opacity: 0;
+        }
+        24% {
+          opacity: 0.42;
+        }
+        100% {
+          opacity: 1;
+        }
+      }
+
+      @keyframes story-scene-blackout-in {
+        0% {
+          opacity: 1;
+        }
+        100% {
+          opacity: 0;
         }
       }
 
@@ -2890,6 +3136,22 @@ function StyleBlock() {
           radial-gradient(ellipse 38% 30% at 60% 70%, rgba(255, 44, 44, 0.68) 0 22%, rgba(186, 12, 18, 0.42) 42%, transparent 68%),
           linear-gradient(180deg, rgba(255, 16, 16, 0.92), rgba(125, 6, 12, 0.88));
         animation: story-blood-entry 900ms ease forwards;
+      }
+
+      .story-scene-transition {
+        position: absolute;
+        inset: 0;
+        pointer-events: none;
+        z-index: 4;
+        background: rgba(0, 0, 0, 1);
+      }
+
+      .story-scene-transition.exit {
+        animation: story-scene-blackout-out 1300ms ease forwards;
+      }
+
+      .story-scene-transition.enter {
+        animation: story-scene-blackout-in 1100ms ease forwards;
       }
 
       .story-page {
@@ -4625,6 +4887,37 @@ function StyleBlock() {
         display: flex;
         gap: 0.72rem;
         margin-top: 1rem;
+      }
+
+      .memory-crystal-card {
+        position: relative;
+        max-width: 38rem;
+      }
+
+      .overlay-corner-button {
+        position: absolute;
+        top: 0.95rem;
+        right: 1rem;
+        z-index: 1;
+      }
+
+      .memory-crystal-grid {
+        display: grid;
+        gap: 0.8rem;
+        margin-top: 1rem;
+      }
+
+      .memory-crystal-choice {
+        width: 100%;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 1rem;
+      }
+
+      .memory-crystal-cost {
+        font-size: 0.82rem;
+        color: rgba(208, 236, 255, 0.72);
       }
 
       .space-reorg-backdrop {

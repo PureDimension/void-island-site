@@ -1030,7 +1030,7 @@ const UNIT_CATALOG = {
   "s3-book-soul": defineUnit({
     name: "灵魂之书",
     power: 7,
-    description: "【正位】攻击之前使己方 POWER 最小且不持有【认知失调】的单位获得【认知失调 X】，X 为自身 POWER；【逆位】攻击之前使对方获得【认知失调 X】。【认知失调 X】：战斗时，对方 POWER 被视为 X（本场战斗不触发）。攻击后【真伪逆转】。",
+    description: "【正位】攻击之前使己方 POWER 最小且不持有【认知失调】的单位获得【认知失调 X】，X 为自身 POWER；【逆位】攻击之前使对方获得【认知失调 X】。【认知失调 X】：战斗时，战斗对象 POWER 被视为 X（本场战斗不触发）。攻击后【真伪逆转】。",
     runtimeState: {
       stage3Book: true,
       stage3Seal: true,
@@ -1092,18 +1092,18 @@ const UNIT_CATALOG = {
   "s3-memory-impurity": defineUnit({
     name: "记忆碎片·杂质",
     power: 0,
-    description: "▲：攻击前使对方【真伪逆转】。",
-    tags: ["▲"],
+    description: "●：被战斗摧毁时，使对方【真伪逆转】。",
+    tags: ["●"],
     runtimeState: {
       removeOnDestroyed: true,
     },
     hooks: {
-      beforeCombat: [
-        (runtime, state, { self, attacker, defender }) => {
-          if (!(self.alive && isStage3CombatAttacker(self, attacker) && defender?.alive)) {
+      onDestroyed: [
+        (runtime, state, { self, reason, opponent }) => {
+          if (reason !== "combat" || !opponent?.alive) {
             return;
           }
-          runtime.stage3InvertUnit(state, defender, self);
+          runtime.stage3InvertUnit(state, opponent, self);
         },
       ],
     },
@@ -1111,14 +1111,14 @@ const UNIT_CATALOG = {
   "s3-memory-matrix": defineUnit({
     name: "记忆碎片·基质",
     power: 1,
-    description: "▲：攻击前使影子 POWER +1，并使对方【真伪逆转】。",
-    tags: ["▲"],
+    description: "▲：攻击前使影子 POWER +1。●：被战斗摧毁时，使对方【真伪逆转】。",
+    tags: ["▲", "●"],
     runtimeState: {
       removeOnDestroyed: true,
     },
     hooks: {
       beforeCombat: [
-        (runtime, state, { self, attacker, defender }) => {
+        (runtime, state, { self, attacker }) => {
           if (!(self.alive && isStage3CombatAttacker(self, attacker))) {
             return;
           }
@@ -1133,9 +1133,14 @@ const UNIT_CATALOG = {
               targetUnitId: shadow.id,
             });
           }
-          if (defender?.alive) {
-            runtime.stage3InvertUnit(state, defender, self);
+        },
+      ],
+      onDestroyed: [
+        (runtime, state, { self, reason, opponent }) => {
+          if (reason !== "combat" || !opponent?.alive) {
+            return;
           }
+          runtime.stage3InvertUnit(state, opponent, self);
         },
       ],
     },
@@ -1466,6 +1471,350 @@ UNIT_CATALOG["robot-stage3-story-v2"] = defineUnit({
         key: "已发动能力次数",
         value: `${battle?.stageRuntime?.shadowAbilityUseCount ?? 0}`,
       }),
+    ],
+  },
+});
+
+UNIT_CATALOG["robot-stage3-story-v2"] = defineUnit({
+  ...UNIT_CATALOG["robot-stage3-story-v2"],
+  description: "◆【空间重组·改】：选择一个己方单位和一个其他单位，将前者的部分 POWER 与其身上的 BUFF 一并转移给后者。使用之前使自身 POWER -X，X 为本游戏中影子已经发动过的能力次数。◆【时间流逝·改】：仅可在敌方行动前的 CONFIRM 阶段发动。取消敌方本轮行动及其全部后果，并直接进入下一个己方回合。使用之前使自身 POWER -X，X 为本游戏中影子已经发动过的能力次数。●【记忆结晶】：当自身将被摧毁时，若场上存在友方记忆碎片，则可选择其中任意一个，使其减少影子当前 POWER，并令影子免疫本次摧毁。若本单位被摧毁，则游戏失败。",
+});
+
+UNIT_CATALOG["s3-book-soul"] = defineUnit({
+  ...UNIT_CATALOG["s3-book-soul"],
+  description: "【正位】攻击之前使己方 POWER 最小且不持有【认知失调】的单位获得【认知失调 X】，X 为自身 POWER；【逆位】攻击之前使对方获得【认知失调 X】。当持有该状态的单位发生战斗时，与之战斗的敌方 POWER 在攻击前、战斗中、攻击后都视为 X。攻击后【真伪逆转】。",
+  hooks: buildStage3AttackBookHooks({
+    onUprightBefore: (runtime, state, { self }) => {
+      const allies = runtime.getAllUnits(state.battle)
+        .filter((unit) => unit.alive)
+        .filter((unit) => runtime.getControlSide(unit) === runtime.getControlSide(self))
+        .filter((unit) => unit.runtimeState?.opponentPowerFixed == null);
+      const recipient = runtime.pickByPower(allies, "lowest", self);
+      if (!recipient) {
+        return;
+      }
+      recipient.runtimeState = recipient.runtimeState || {};
+      recipient.runtimeState.opponentPowerFixed = self.power;
+      runtime.addLog(state, "hook", `${self.name} 以【正位】使 ${recipient.name} 获得【认知失调 ${self.power}】。`, {
+        unitId: self.id,
+        targetUnitId: recipient.id,
+      });
+    },
+    onReversedBefore: (runtime, state, { self, target }) => {
+      if (!target?.alive) {
+        return;
+      }
+      target.runtimeState = target.runtimeState || {};
+      target.runtimeState.opponentPowerFixed = self.power;
+      runtime.addLog(state, "hook", `${self.name} 以【逆位】使 ${target.name} 获得【认知失调 ${self.power}】。`, {
+        unitId: self.id,
+        targetUnitId: target.id,
+      });
+    },
+  }),
+});
+
+UNIT_CATALOG["s3-book-element"] = defineUnit({
+  ...UNIT_CATALOG["s3-book-element"],
+  hooks: buildStage3AttackBookHooks({
+    onUprightAfter: (runtime, state, { self, target, attacker, defender }) => {
+      if (!self.alive) {
+        return;
+      }
+      const amount = runtime.getCombatSeenPower(self, { attacker, defender });
+      runtime.addDirectPower(state, target, -amount, {
+        sourceUnit: self,
+        sourceUnitId: self.id,
+      });
+      runtime.addLog(state, "hook", `${self.name} 以【正位】使 ${target.name} 的 POWER -${amount}。`, {
+        unitId: self.id,
+        targetUnitId: target.id,
+      });
+      runtime.enforcePowerBounds(state, target, { cause: "stage3-element-upright", sourceUnitId: self.id });
+    },
+    onReversedAfter: (runtime, state, { self, target, attacker, defender }) => {
+      if (!(self.alive && target?.alive)) {
+        return;
+      }
+      const amount = runtime.getCombatSeenPower(self, { attacker, defender });
+      runtime.addDirectPower(state, target, amount, {
+        sourceUnit: self,
+        sourceUnitId: self.id,
+      });
+      runtime.addLog(state, "hook", `${self.name} 以【逆位】使 ${target.name} 的 POWER +${amount}。`, {
+        unitId: self.id,
+        targetUnitId: target.id,
+      });
+      runtime.enforcePowerBounds(state, target, { cause: "stage3-element-reversed", sourceUnitId: self.id });
+    },
+  }),
+});
+
+UNIT_CATALOG["s3-book-strength"] = defineUnit({
+  ...UNIT_CATALOG["s3-book-strength"],
+  hooks: buildStage3AttackBookHooks({
+    onUprightAfter: (runtime, state, { self, target, attacker, defender }) => {
+      if (!(self.alive && target?.alive)) {
+        return;
+      }
+      const amount = runtime.getCombatSeenPower(target, { attacker, defender });
+      runtime.addDirectPower(state, self, amount, {
+        sourceUnit: target,
+        sourceUnitId: target.id,
+      });
+      runtime.addLog(state, "hook", `${self.name} 以【正位】使自身 POWER +${amount}。`, {
+        unitId: self.id,
+        targetUnitId: target.id,
+      });
+    },
+    onReversedAfter: (runtime, state, { self, target, attacker, defender }) => {
+      if (!(self.alive && target)) {
+        return;
+      }
+      const amount = runtime.getCombatSeenPower(target, { attacker, defender });
+      runtime.addDirectPower(state, self, -amount, {
+        sourceUnit: target,
+        sourceUnitId: target.id,
+      });
+      runtime.addLog(state, "hook", `${self.name} 以【逆位】使自身 POWER -${amount}。`, {
+        unitId: self.id,
+        targetUnitId: target.id,
+      });
+      runtime.enforcePowerBounds(state, self, { cause: "stage3-strength-reversed", sourceUnitId: self.id });
+    },
+  }),
+});
+
+UNIT_CATALOG["s3-memory-raw"] = defineUnit({
+  name: "记忆碎片·未整理",
+  power: 1,
+  description: "▲：攻击前使影子 POWER +2，召唤【记忆碎片•纸鸢】【记忆碎片•水铃儿】【记忆碎片•雪鹿】【记忆碎片•萤草】，并使对方【真伪逆转】。▼：战斗结束后自毁。",
+  tags: ["▲"],
+  runtimeState: {
+    removeOnDestroyed: true,
+  },
+  hooks: {
+    beforeCombat: [
+      (runtime, state, { self, attacker, defender }) => {
+        if (!(self.alive && isStage3CombatAttacker(self, attacker))) {
+          return;
+        }
+        const shadow = runtime.findUnit(state.battle, "p-robot");
+        if (shadow?.alive) {
+          runtime.addDirectPower(state, shadow, 2, {
+            sourceUnit: self,
+            sourceUnitId: self.id,
+          });
+          runtime.addLog(state, "hook", `${self.name} 使 ${shadow.name} 的 POWER +2。`, {
+            unitId: self.id,
+            targetUnitId: shadow.id,
+          });
+        }
+        if (!self.runtimeState?.stage3RawSummoned) {
+          runtime.summonUnit(state, { template: "s3-memory-kite", id: "s3-memory-kite", slot: 4, side: "player" });
+          runtime.summonUnit(state, { template: "s3-memory-waterbell", id: "s3-memory-waterbell", slot: 6, side: "player" });
+          runtime.summonUnit(state, { template: "s3-memory-snowdeer", id: "s3-memory-snowdeer", slot: 8, side: "player" });
+          runtime.summonUnit(state, { template: "s3-memory-firefly", id: "s3-memory-firefly", slot: 10, side: "player" });
+          self.runtimeState = self.runtimeState || {};
+          self.runtimeState.stage3RawSummoned = true;
+        }
+        if (defender?.alive) {
+          runtime.stage3InvertUnit(state, defender, self);
+        }
+      },
+    ],
+    afterCombat: [
+      (runtime, state, { self, attacker, defender }) => {
+        if (!isStage3CombatAttacker(self, attacker)) {
+          return;
+        }
+        runtime.destroyUnit(state, self, "stage3-raw-self-destroy", { attacker, defender });
+      },
+    ],
+  },
+});
+
+UNIT_CATALOG["s3-memory-kite"] = defineUnit({
+  name: "记忆碎片•纸鸢",
+  power: 3,
+  description: "▲：攻击时使对方【真伪逆转】并减少 X POWER，X 为本单位已发动攻击的次数。●：本单位免疫 POWER 为 X 以上单位的战斗伤害。",
+  tags: ["▲", "●"],
+  runtimeState: {
+    stage3AttackCount: 0,
+    removeOnDestroyed: true,
+  },
+  viewHooks: {
+    inspectorEntries: [
+      (runtime, battle, self) => ({
+        key: "已发动次数",
+        value: `${self.runtimeState?.stage3AttackCount ?? 0}`,
+      }),
+    ],
+  },
+  hooks: {
+    beforeCombat: [
+      (runtime, state, { self, attacker, defender }) => {
+        if (!(self.alive && isStage3CombatAttacker(self, attacker) && defender?.alive)) {
+          return;
+        }
+        const nextCount = (self.runtimeState?.stage3AttackCount || 0) + 1;
+        self.runtimeState.stage3AttackCount = nextCount;
+        self.runtimeState.stage3CurrentAttackCount = nextCount;
+        runtime.stage3InvertUnit(state, defender, self);
+        runtime.addDirectPower(state, defender, -nextCount, {
+          sourceUnit: self,
+          sourceUnitId: self.id,
+        });
+        runtime.addLog(state, "hook", `${self.name} 使 ${defender.name} 的 POWER -${nextCount}。`, {
+          unitId: self.id,
+          targetUnitId: defender.id,
+        });
+        runtime.enforcePowerBounds(state, defender, {
+          cause: "stage3-kite-cut",
+          sourceUnitId: self.id,
+        });
+      },
+    ],
+    preventCombatDestruction: [
+      (runtime, state, { self, threatenedUnit, attacker, defender }) => {
+        if (self.id !== threatenedUnit.id) {
+          return false;
+        }
+        const opponent = self.id === attacker?.id ? defender : attacker;
+        if (!opponent?.alive) {
+          return false;
+        }
+        const threshold = self.runtimeState?.stage3CurrentAttackCount ?? self.runtimeState?.stage3AttackCount ?? 0;
+        const opponentPower = runtime.getCombatSeenPower(opponent, { attacker, defender });
+        return opponentPower >= threshold;
+      },
+    ],
+    afterCombat: [
+      (runtime, state, { self, attacker }) => {
+        if (self.id === attacker?.id) {
+          delete self.runtimeState.stage3CurrentAttackCount;
+        }
+      },
+    ],
+  },
+});
+
+UNIT_CATALOG["s3-memory-waterbell"] = defineUnit({
+  name: "记忆碎片•水铃儿",
+  power: 4,
+  description: "▲：如果目标持有【认知失调】，反转本场战斗结果并清除认知失调。●：本单位可以对友方单位发动攻击。",
+  tags: ["▲", "●"],
+  display: {
+    ...STANDARD_DISPLAY,
+    canTargetFriendly: true,
+  },
+  runtimeState: {
+    removeOnDestroyed: true,
+  },
+  hooks: {
+    beforeCombat: [
+      (runtime, state, { self, attacker, defender, combatControl }) => {
+        if (!(self.alive && isStage3CombatAttacker(self, attacker) && defender?.alive)) {
+          return;
+        }
+        if (defender.runtimeState?.opponentPowerFixed == null) {
+          return;
+        }
+        combatControl.reverseOutcome = true;
+        delete defender.runtimeState.opponentPowerFixed;
+        runtime.addLog(state, "hook", `${self.name} 反转了本场战斗结果，并清除了 ${defender.name} 身上的【认知失调】。`, {
+          unitId: self.id,
+          targetUnitId: defender.id,
+        });
+      },
+    ],
+  },
+});
+
+UNIT_CATALOG["s3-memory-snowdeer"] = defineUnit({
+  name: "记忆碎片•雪鹿",
+  power: 5,
+  description: "▼：攻击后，使己方所有单位的 POWER 增加当前时刻场上已被摧毁的敌方单位数量。",
+  tags: ["▼"],
+  runtimeState: {
+    removeOnDestroyed: true,
+  },
+  hooks: {
+    afterCombat: [
+      (runtime, state, { self, attacker }) => {
+        if (!(self.alive && isStage3CombatAttacker(self, attacker))) {
+          return;
+        }
+        const destroyedEnemyCount = runtime.getAllUnits(state.battle)
+          .filter((unit) => !unit.alive)
+          .filter((unit) => runtime.getControlSide(unit) === "enemy")
+          .length;
+        if (!destroyedEnemyCount) {
+          return;
+        }
+        runtime.getAllUnits(state.battle)
+          .filter((unit) => unit.alive)
+          .filter((unit) => runtime.getControlSide(unit) === "player")
+          .forEach((unit) => {
+            runtime.addDirectPower(state, unit, destroyedEnemyCount, {
+              sourceUnit: self,
+              sourceUnitId: self.id,
+            });
+            runtime.addLog(state, "hook", `${self.name} 使 ${unit.name} 的 POWER +${destroyedEnemyCount}。`, {
+              unitId: self.id,
+              targetUnitId: unit.id,
+            });
+          });
+        runtime.getAllUnits(state.battle)
+          .filter((unit) => unit.alive)
+          .forEach((unit) => runtime.enforcePowerBounds(state, unit, {
+            cause: "stage3-snowdeer-boost",
+            sourceUnitId: self.id,
+          }));
+      },
+    ],
+  },
+});
+
+UNIT_CATALOG["s3-memory-firefly"] = defineUnit({
+  name: "记忆碎片•萤草",
+  power: 4,
+  description: "▲：攻击前使目标及其左右两个单位【真伪逆转】。▼：攻击后使自身能力变为上一个被摧毁的己方单位的能力。",
+  tags: ["▲", "▼"],
+  runtimeState: {
+    removeOnDestroyed: true,
+  },
+  hooks: {
+    beforeCombat: [
+      (runtime, state, { self, attacker, defender }) => {
+        if (!(self.alive && isStage3CombatAttacker(self, attacker) && defender?.alive)) {
+          return;
+        }
+        const sameSideUnits = runtime.getAllUnits(state.battle)
+          .filter((unit) => unit.alive)
+          .filter((unit) => runtime.getControlSide(unit) === runtime.getControlSide(defender))
+          .sort((a, b) => a.slot - b.slot);
+        const centerIndex = sameSideUnits.findIndex((unit) => unit.id === defender.id);
+        [centerIndex - 1, centerIndex, centerIndex + 1]
+          .map((index) => sameSideUnits[index])
+          .filter(Boolean)
+          .forEach((unit) => runtime.stage3InvertUnit(state, unit, self));
+      },
+    ],
+    afterCombat: [
+      (runtime, state, { self, attacker }) => {
+        if (!(self.alive && self.id === attacker?.id)) {
+          return;
+        }
+        const snapshot = state?.battle?.stageRuntime?.stage3LastDestroyedFriendlyAbility;
+        if (!snapshot || snapshot.abilityCode === self.abilityCode) {
+          return;
+        }
+        runtime.applyAbilitySnapshotToUnit(self, snapshot);
+        runtime.addLog(state, "hook", `${self.name} 继承了上一个被摧毁己方单位的能力。`, {
+          unitId: self.id,
+        });
+      },
     ],
   },
 });

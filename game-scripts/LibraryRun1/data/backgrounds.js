@@ -32,6 +32,16 @@ const STORY_BACKGROUND_PRESETS = {
       { className: "story-backdrop story-backdrop-infinity-sigil" },
     ],
   },
+  prologue: {
+    key: "prologue",
+    rootClassName: "story-bg-prologue",
+    layers: [
+      { className: "story-backdrop story-backdrop-prologue-base" },
+      { className: "story-backdrop story-backdrop-prologue-haze-a" },
+      { className: "story-backdrop story-backdrop-prologue-haze-b" },
+      { className: "story-backdrop story-backdrop-prologue-glow" },
+    ],
+  },
 };
 
 function normalizeBackgroundInput(input) {

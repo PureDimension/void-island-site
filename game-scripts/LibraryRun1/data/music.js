@@ -1,6 +1,20 @@
 const { TUTORIAL_STAGE_ID, STAGE_1_ID, STAGE_2_ID } = require("./flow");
 
 const TRACKS = {
+  none: {
+    key: "none",
+    fileName: null,
+    source: "",
+    title: "无音乐",
+    credit: "",
+  },
+  prepare: {
+    key: "prepare",
+    fileName: "prepare.mp3",
+    source: "魔王魂インストルメンタル",
+    title: "ピアノ40 -安らぎの思い-",
+    credit: "森田交一",
+  },
   tutorial: {
     key: "tutorial",
     fileName: "tutorial.mp3",
@@ -57,6 +71,14 @@ const TRACKS = {
     title: "\u51b7\u6de1\u306a\u5ba3\u544a",
     credit: "MOSAIC.WAV",
   },
+  prologue: {
+    key: "prologue",
+    fileName: "prologue.mp3",
+    source: "《魔女之家》",
+    title: "itomaki",
+    credit: "ふみー",
+    volume: 0.7,
+  },
   finale: {
     key: "finale",
     fileName: "finale.mp3",
@@ -67,6 +89,9 @@ const TRACKS = {
 };
 
 function buildAssetUrl(fileName) {
+  if (!fileName) {
+    return "";
+  }
   const key = fileName.replace(/\.mp3$/i, "");
   return `/api/library-run1-audio/${key}`;
 }
@@ -78,6 +103,12 @@ function resolveStoryTrack(gameState) {
   const musicTrack = page?.musicTrack;
 
   if (musicTrack) {
+    if (musicTrack === "none") {
+      return TRACKS.none;
+    }
+    if (musicTrack === "prepare") {
+      return TRACKS.prepare;
+    }
     if (musicTrack === "tutorial") {
       return TRACKS.tutorial;
     }
@@ -98,6 +129,9 @@ function resolveStoryTrack(gameState) {
     }
     if (musicTrack === "stage3_story_c") {
       return TRACKS.stage3StoryC;
+    }
+    if (musicTrack === "prologue") {
+      return TRACKS.prologue;
     }
     if (musicTrack === "finale") {
       return TRACKS.finale;
@@ -134,7 +168,7 @@ function resolveMusicTrack(gameState) {
   }
 
   if (gameState.phase === "MODE_SELECT") {
-    return TRACKS.tutorial;
+    return TRACKS.prepare;
   }
 
   if (gameState.phase === "STORY") {

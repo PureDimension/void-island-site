@@ -191,21 +191,10 @@ function stage2RotationDefense(context) {
 }
 
 function stage3TurnBooks(context) {
-  const stageRuntime = context.state.battle?.stageRuntime || {};
-  const forcedTarget = (
-    stageRuntime.stage3ForcedEnemyTargetTurn === context.state.battle?.turn
-      ? context.findUnit(context.state.battle, stageRuntime.stage3ForcedEnemyTargetId)
-      : null
-  );
   const fallbackTarget = context.findUnit(context.state.battle, "p-robot");
-  const target = forcedTarget && forcedTarget.alive && context.canEnemyTreatAsPlayerTarget(forcedTarget)
-    ? forcedTarget
-    : context
-      .alivePlayerUnits()
-      .filter((unit) => unit.runtimeState?.stage3HasAttacked)
-      .filter((unit) => context.canEnemyTreatAsPlayerTarget(unit))
-      .sort((a, b) => b.slot - a.slot)[0]
-      || (fallbackTarget?.alive && context.canEnemyTreatAsPlayerTarget(fallbackTarget) ? fallbackTarget : null);
+  const target = fallbackTarget?.alive && context.canEnemyTreatAsPlayerTarget(fallbackTarget)
+    ? fallbackTarget
+    : null;
 
   if (!target || !target.alive || !context.canEnemyTreatAsPlayerTarget(target)) {
     return {

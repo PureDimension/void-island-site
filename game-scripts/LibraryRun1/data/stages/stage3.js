@@ -216,6 +216,89 @@ function onStage3EnemyTurnStart(runtime, state) {
   refreshStage3Descriptions(runtime, state);
 }
 
+function stage3EnemyLogicText(state) {
+  const runtime = state?.battle?.stageRuntime || {};
+  const lines = [
+    "根据当前回合数 TURN 模 5 的结果，取[元素之书，力量之书，灵魂之书，时空之书，炼金术士卡特]对应的单位，对影子发动攻击。",
+    "在每个己方回合开始和敌方回合开始时，根据单位当前 POWER 判定其为正位或逆位。",
+    "【正逆位结界】：POWER 为 0-4 时视为【正位】；POWER 为 5-9 时视为【逆位】；攻击时发动对应效果，之后【真伪逆转】。",
+    "【真伪逆转】：使自身 POWER 变为 9 - 原本 POWER。",
+  ];
+
+  if (runtime.stage3CooperationEnabled) {
+    lines.push("【协同攻击-<上一个单位>】：仅敌方五个主单位持有；自己攻击时，若上一个单位与自身正逆位相反，则攻击后对同一目标追加一次攻击；该追加攻击也可继续连锁。");
+  }
+
+  if (runtime.stage3ForceFirstFailedCoop) {
+    lines.push("【TURN10】：每回合首个失败的协同攻击改为成功触发。");
+    lines.push("【TURN10】：【永恒】增强为敌方单位死亡时立刻复活，且复活回合可以攻击与协同攻击。");
+  }
+
+  return lines;
+}
+
+function onStage3TurnStart(runtime, state) {
+  const battle = state?.battle;
+  const carter = runtime.findUnit(battle, "s3-alchemist-carter");
+  if (!battle) {
+    return;
+  }
+
+  runtime.syncStage3StanceSnapshots(state);
+  battle.enemyUnits.forEach((unit) => {
+    if (unit?.runtimeState?.stage3NoAttackTurn === battle.turn) {
+      delete unit.runtimeState.stage3NoAttackTurn;
+    }
+  });
+
+  if (!carter) {
+    return;
+  }
+
+  if (!carter.alive) {
+    carter.alive = true;
+    carter.destroyedAtTurn = null;
+    carter.buffs = Object.fromEntries(Object.keys(carter.buffs || {}).map((key) => [key, 0]));
+    carter.combat.lastBattleUnitId = null;
+    carter.runtimeState = carter.runtimeState || {};
+    delete carter.runtimeState.stage3NoAttackTurn;
+    runtime.updateUnitPresentation(carter);
+    runtime.addLog(state, "hook", `${carter.name} 在己方回合开始时恢复行动。`, {
+      unitId: carter.id,
+    });
+  }
+
+  refreshStage3Descriptions(runtime, state);
+}
+
+function onStage3EnemyTurnStart(runtime, state) {
+  const battle = state?.battle;
+  const carter = runtime.findUnit(battle, "s3-alchemist-carter");
+  if (!battle) {
+    return;
+  }
+
+  runtime.syncStage3StanceSnapshots(state);
+
+  if (!(carter && carter.alive) || carter.power === 10) {
+    refreshStage3Descriptions(runtime, state);
+    return;
+  }
+
+  battle.enemyUnits
+    .filter((unit) => unit.id !== carter.id && !unit.alive)
+    .forEach((unit) => {
+      if (runtime.reviveUnit(state, unit, "stage3-carter-eternity", carter, "enemy")) {
+        if (!battle.stageRuntime?.stage3InstantReviveEnabled) {
+          unit.runtimeState = unit.runtimeState || {};
+          unit.runtimeState.stage3NoAttackTurn = battle.turn;
+        }
+      }
+    });
+
+  refreshStage3Descriptions(runtime, state);
+}
+
 module.exports = {
   stageId: STAGE_3_ID,
   title: "第三关·六书回廊",
@@ -225,8 +308,6 @@ module.exports = {
   runtimeState: {
     stage3CooperationEnabled: false,
     stage3ForceFirstFailedCoop: false,
-    stage3ForcedEnemyTargetTurn: null,
-    stage3ForcedEnemyTargetId: null,
     stage3SignalBoostTurn: null,
     stage3BuffNullifyTurn: null,
     stage3BuffNullifySide: null,
@@ -313,8 +394,8 @@ module.exports = {
       pages: [
         page("【炼金术士卡特】", "为交界图书馆埋下根基的【时空之书】啊，请洞悉世间真理，排除一切错误！"),
         page("【系统】", "这次是对面的墙体吗？不，这次连带着头顶和脚下的墙体，一起碎裂崩塌了。影子发现自身一下子置身在了一片宇宙背景中，四周是盘旋着的四本书，眼前是炼金术士卡特紧闭着双眼，指挥着书的运动。"),
-        page("【萤草】", "这本书更是要小心，一旦感染上【时空闭环】，不仅会影响持有BUFF者一方的所有单位，而且随时可能导致玩家落败。"),
-        page("【系统】", "由于有着可能导致玩家落败的广域能力，双方玩家持有的本BUFF情况都将同步显示在背景数字上。"),
+        page("【萤草】", "这本书更是要小心，【时空闭环】会随着战斗的进行而逐渐累积。第一次记录某个POWER时，会使得战斗中该POWER值的敌方获得强化。第二次记录相同POWER时，会使玩家直接落败。"),
+        page("【系统】", "由于有着可能导致玩家落败的广域能力，本BUFF情况都将同步显示在背景数字上。"),
         page("【萤草】", "但愿你还能撑住，我还在尝试解析这个大块头的弱点，再撑一会儿吧。"),
         page("【影子】", "也多亏了这份舞台，我突然想起来了很多事情，关于我存在的意义和我的旅途。没问题的。"),
       ],
@@ -332,8 +413,12 @@ module.exports = {
         page("【系统】", "【炼金术士卡特】发动了全员强化，自身POWER永久+1，使【元素之书】【灵魂之书】【真伪逆转】，敌方所有单位获得【协同攻击-<上一个/左侧单位>】，敌方所有单位能力描述已更新。", {
           tone: "red",
         }),
-        page("【萤草】", "竟然是很罕见的高速连击...请务必要小心，"),
+        page("【萤草】", "竟然是很罕见的高速连击...请务必要小心，至今为止你参与的战斗，除了B细胞以外都没有单回合多次攻击的能力。"),
+        page("【萤草】", "而卡特可以轻易地发动多轮攻击，请综合考虑多轮攻击的后果。"),
+        page("【萤草】", "不过，要想战胜她，就必须要将卡特的POWER提高至10，即在卡特死亡的情况下多次触发敌方的攻击。如果拖太久了也会对己方不利。"),
+        page("【萤草】", "比如这一轮，既可以保守一点，攻击【时空之书】或【炼金术士卡特】，也可以再多触发几次，推进胜利进度？"),
         page("【萤草】", "唔，以防你忘记我决定再说一遍，卡特的书攻击结束都会发动【真伪逆转】，这些可以在敌方行动栏看到。"),
+        page("【萤草】", "之后的战斗我就无法协助你了，祝你好运！"),
       ],
     },
     {

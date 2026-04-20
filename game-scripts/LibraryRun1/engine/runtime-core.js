@@ -234,6 +234,7 @@ function summonUnit(state, entry) {
     unitId: unit.id,
     source: "stage-event",
   });
+  syncStage3StanceSnapshots(state);
   return unit;
 }
 
@@ -254,6 +255,7 @@ function buildBattle(stageId, state) {
       overloadPower: null,
     },
     pendingEnemyAction: null,
+    memoryCrystalPrompt: null,
     eventState: createBattleEventState(),
     lastEnemyAttackerId: null,
     lastPlayerAttackerId: null,
@@ -271,6 +273,7 @@ function buildBattle(stageId, state) {
     guide: createGuideState(stageId),
   };
   battle.stageRuntime.shadowAbilityUseCount = getShadowAbilityUseCount(state);
+  syncStage3StanceSnapshots({ battle });
   return battle;
 }
 
@@ -438,6 +441,10 @@ function getStage3Stance(unit) {
   if (!unit) {
     return null;
   }
+  const snapshot = unit.runtimeState?.stage3StanceSnapshot;
+  if (snapshot === "upright" || snapshot === "reversed") {
+    return snapshot;
+  }
   if (unit.power >= 0 && unit.power <= 4) {
     return "upright";
   }
@@ -445,6 +452,35 @@ function getStage3Stance(unit) {
     return "reversed";
   }
   return null;
+}
+
+function computeStage3StanceSnapshot(unit) {
+  if (!(unit?.runtimeState?.stage3Seal || unit?.runtimeState?.stage3Book) || !unit.alive) {
+    return null;
+  }
+  if (unit.power >= 0 && unit.power <= 4) {
+    return "upright";
+  }
+  if (unit.power >= 5 && unit.power <= 9) {
+    return "reversed";
+  }
+  return null;
+}
+
+function syncStage3StanceSnapshots(state) {
+  const battle = state?.battle;
+  if (!battle || battle.stageId !== "stage3-core") {
+    return;
+  }
+  for (const unit of getAllUnits(battle)) {
+    unit.runtimeState = unit.runtimeState || {};
+    const next = computeStage3StanceSnapshot(unit);
+    if (next) {
+      unit.runtimeState.stage3StanceSnapshot = next;
+    } else {
+      delete unit.runtimeState.stage3StanceSnapshot;
+    }
+  }
 }
 
 function isStage3OppositeStance(unitA, unitB) {
@@ -507,6 +543,8 @@ function applyDirectPowerChange(state, unit, nextPower, options = {}) {
     });
     return false;
   }
+  unit.runtimeState = unit.runtimeState || {};
+  unit.runtimeState.lastPowerBeforeDirectChange = unit.power;
   unit.power = nextPower;
   triggerStage3CarterOverflow(state, unit, options.sourceUnit || null);
   return true;
@@ -547,7 +585,7 @@ function addStage3GlobalLoop(state, kind, power) {
   }
   const stageRuntime = state.battle.stageRuntime;
   const normalizedPower = normalizeStage3LoopBucket([power])[0];
-  if (!normalizedPower) {
+  if (!Number.isFinite(normalizedPower)) {
     return;
   }
 
@@ -597,19 +635,7 @@ function commitPendingStage3Loops(state) {
 }
 
 function commitPendingStage3Dissonance(state) {
-  const battle = state?.battle;
-  if (!battle) {
-    return;
-  }
-
-  for (const unit of getAllUnits(battle)) {
-    const pendingValue = unit?.runtimeState?.pendingOpponentPowerFixed;
-    if (pendingValue == null) {
-      continue;
-    }
-    unit.runtimeState.opponentPowerFixed = pendingValue;
-    delete unit.runtimeState.pendingOpponentPowerFixed;
-  }
+  // Stage 3认知失调已改为即时生效；保留空函数以兼容旧调用点。
 }
 
 function resolveStage3CarterAscension(state, resultContext) {
@@ -697,6 +723,9 @@ function canPlayerTargetEnemy(state, attacker, unit) {
       self: attacker,
       target: unit,
     });
+  }
+  if (getUnitDefinitionForUnit(attacker).display?.canTargetFriendly === true) {
+    return true;
   }
   return areHostile(attacker, unit) || display.enemyLikeForPlayerTarget === true;
 }
@@ -864,14 +893,107 @@ function transferUnitBuffs(state, source, target, caster = null) {
   }
 }
 
+function canTriggerMemoryCrystal(state, unit) {
+  return !!(
+    state?.battle
+    && state.battle.stageId === "stage3-core"
+    && state.campaign?.mode === "story"
+    && unit?.id === "p-robot"
+    && unit.alive
+  );
+}
+
+function getMemoryCrystalCandidates(state) {
+  return (state?.battle?.playerUnits || [])
+    .filter((unit) => unit.alive)
+    .filter((unit) => unit.id !== "p-robot")
+    .filter((unit) => unit.abilityCode?.startsWith("s3-memory-"));
+}
+
+function triggerMemoryCrystalPrompt(state, unit, reason, payload = {}) {
+  if (!canTriggerMemoryCrystal(state, unit) || state.battle.memoryCrystalPrompt) {
+    return false;
+  }
+  const candidates = getMemoryCrystalCandidates(state);
+  if (!candidates.length) {
+    return false;
+  }
+
+  const restorePower = (
+    reason === "power-out-of-range"
+      ? (payload.restorePower ?? unit.runtimeState?.lastPowerBeforeDirectChange)
+      : null
+  );
+  const shadowPower = Number.isFinite(payload.shadowPowerAtTrigger) ? payload.shadowPowerAtTrigger : unit.power;
+
+  if (restorePower != null) {
+    unit.power = restorePower;
+  }
+
+  state.battle.memoryCrystalPrompt = {
+    shadowId: unit.id,
+    shadowPower,
+    restorePower,
+    reason,
+    candidateIds: candidates.map((candidate) => candidate.id),
+    resumeFlow: payload.resumeFlow || null,
+  };
+  addLog(state, "hook", `【记忆结晶】触发：请选择一个友方记忆碎片承担 ${shadowPower} 点代价。`, {
+    unitId: unit.id,
+  });
+  return true;
+}
+
+function snapshotUnitAbility(unit) {
+  if (!unit) {
+    return null;
+  }
+  return {
+    abilityCode: unit.abilityCode,
+    descriptionOverride: unit.descriptionOverride || null,
+    tagsOverride: clone(unit.tagsOverride || unit.tags || []),
+    name: unit.name,
+    runtimeState: clone(unit.runtimeState || {}),
+  };
+}
+
+function applyAbilitySnapshotToUnit(unit, snapshot) {
+  if (!(unit && snapshot?.abilityCode)) {
+    return false;
+  }
+  unit.abilityCode = snapshot.abilityCode;
+  unit.code = snapshot.abilityCode;
+  unit.descriptionOverride = snapshot.descriptionOverride || null;
+  unit.tagsOverride = clone(snapshot.tagsOverride || null);
+  unit.runtimeState = {
+    ...(unit.runtimeState || {}),
+    ...clone(getUnitDefinition(snapshot.abilityCode).runtimeState || {}),
+  };
+  refreshUnitPresentation(unit);
+  return true;
+}
+
 function destroyUnit(state, unit, reason, payload = {}) {
   if (!unit || !unit.alive) {
+    return;
+  }
+
+  if (triggerMemoryCrystalPrompt(state, unit, reason, payload)) {
+    refreshUnitPresentation(unit);
     return;
   }
 
   unit.alive = false;
   unit.destroyedAtTurn = state.battle.turn;
   recordDestroyedUnit(state, unit);
+  if (
+    state?.battle?.stageId === "stage3-core"
+    && getControlSide(unit) === "player"
+    && unit.id !== "p-robot"
+  ) {
+    state.battle.stageRuntime = state.battle.stageRuntime || {};
+    state.battle.stageRuntime.stage3LastDestroyedFriendlyAbility = snapshotUnitAbility(unit);
+  }
 
   addLog(state, "destroy", `${unit.name} 被摧毁。`, {
     unitId: unit.id,
@@ -908,7 +1030,10 @@ function destroyUnit(state, unit, reason, payload = {}) {
     }
   }
 
-  if (unit.runtimeState?.removeOnDestroyed) {
+  if (
+    unit.runtimeState?.removeOnDestroyed
+    && !(state?.battle?.stageId === "stage3-core" && (state.battle.turn || 0) >= 6)
+  ) {
     removeUnitFromBattle(state, unit);
   }
 }
@@ -927,6 +1052,7 @@ function reviveUnit(state, unit, reason, sourceUnit = null, forcedSide = null) {
   unit.runtimeState = clone(getUnitDefinitionForUnit(unit).runtimeState || {});
   moveUnitToSide(state, unit, nextSide);
   refreshUnitPresentation(unit);
+  syncStage3StanceSnapshots(state);
 
   addLog(state, "hook", `${unit.name} 被重新激活。`, {
     unitId: unit.id,
@@ -945,6 +1071,14 @@ function enforcePowerBounds(state, unit, detail = {}) {
 
   const maxPower = unit.runtimeState?.allowPower10 ? 10 : 9;
   if (unit.power < 0 || unit.power > maxPower) {
+    if (triggerMemoryCrystalPrompt(state, unit, detail.cause || "power-out-of-range", {
+      ...detail,
+      restorePower: detail.restorePower ?? unit.runtimeState?.lastPowerBeforeDirectChange,
+      shadowPowerAtTrigger: unit.power,
+    })) {
+      refreshUnitPresentation(unit);
+      return;
+    }
     addLog(state, "rule", `${unit.name} 的 POWER 变为 ${unit.power}，越界摧毁。`, {
       unitId: unit.id,
       value: unit.power,
@@ -959,6 +1093,7 @@ function createRuntimeHelpers() {
     addLog,
     addDirectPower,
     addStage3GlobalLoop,
+    applyAbilitySnapshotToUnit,
     anyTargetHasBuff,
     applyBuff,
     applyDirectPowerChange,
@@ -973,6 +1108,7 @@ function createRuntimeHelpers() {
     getControlSide,
     getFriendlySupportUnits,
     getFriendlyUnitsByOriginalSide,
+    getCombatSeenPower,
     getPreviousCombatAttacker,
     getPreviousCombatDefender,
     getStage3Stance,
@@ -986,6 +1122,7 @@ function createRuntimeHelpers() {
     reviveUnit,
     removeUnitFromBattle,
     settleCombatOutcome,
+    syncStage3StanceSnapshots,
     stage3InvertUnit,
     isStage3OppositeStance,
     summonUnit,
@@ -1066,17 +1203,29 @@ function copyAbility(state, recipient, sourceUnit) {
   });
 }
 
+function getCombatSeenPower(unit, context) {
+  if (!unit) {
+    return 0;
+  }
+  const attacker = context?.attacker;
+  const defender = context?.defender;
+  if (attacker?.id === unit.id) {
+    const fixed = defender?.runtimeState?.opponentPowerFixed;
+    return Number.isFinite(fixed) ? fixed : unit.power;
+  }
+  if (defender?.id === unit.id) {
+    const fixed = attacker?.runtimeState?.opponentPowerFixed;
+    return Number.isFinite(fixed) ? fixed : unit.power;
+  }
+  return unit.power;
+}
+
 function getCombatPower(unit, state, context) {
-  let currentPower = unit.power;
+  let currentPower = getCombatSeenPower(unit, context);
   const runtime = createRuntimeHelpers();
   const hooks = getHookBucket(unit).modifyCombatPower || [];
   for (const hook of hooks) {
     currentPower = hook(runtime, state, { ...context, self: unit, currentPower });
-  }
-  const opponent = context?.attacker?.id === unit.id ? context?.defender : context?.attacker;
-  const opponentFixedPower = opponent?.runtimeState?.opponentPowerFixed;
-  if (Number.isFinite(opponentFixedPower)) {
-    currentPower = opponentFixedPower;
   }
   return currentPower;
 }
@@ -1298,6 +1447,13 @@ function settleCombatOutcome(state, context) {
     } else {
       attackerDestroyed = true;
     }
+  }
+
+  if (fullContext.combatControl.reverseOutcome) {
+    const nextAttackerDestroyed = defenderDestroyed;
+    const nextDefenderDestroyed = attackerDestroyed;
+    attackerDestroyed = nextAttackerDestroyed;
+    defenderDestroyed = nextDefenderDestroyed;
   }
 
   if (attackerDestroyed && attacker.alive && preventCombatDestruction(state, attacker, fullContext)) {
@@ -1717,11 +1873,11 @@ function pushHistory(state) {
   state.history = [...(state.history || []), makeHistorySnapshot(state)].slice(-40);
 }
 
-function buildStoryState(sceneId) {
+function buildStoryState(sceneId, mode = null) {
   return {
     sceneId,
     index: 0,
-    pages: clone(STORY_SCENES[sceneId] || []),
+    pages: clone(STORY_SCENES[sceneId] || []).filter((page) => !page.onlyMode || page.onlyMode === mode),
   };
 }
 
@@ -1760,7 +1916,7 @@ function moveToFlow(state, flowIndex) {
 
   if (entry.type === "story") {
     state.phase = "STORY";
-    state.story = buildStoryState(entry.sceneId);
+    state.story = buildStoryState(entry.sceneId, state.campaign.mode);
     state.storyBackground = getStoryPageBackground(state.story.pages[0], state.storyBackground || "default");
     state.battle = null;
     return;
@@ -1913,6 +2069,61 @@ module.exports = class LibraryRun1Runtime extends BaseGame {
       return state;
     }
 
+    if (action === "resolve-memory-crystal") {
+      if (state.phase !== "BATTLE" || !state.battle?.memoryCrystalPrompt) {
+        return state;
+      }
+
+      const prompt = state.battle.memoryCrystalPrompt;
+      const shadow = findUnit(state.battle, prompt.shadowId);
+      const chosen = findUnit(state.battle, data?.unitId);
+      if (
+        !shadow
+        || !shadow.alive
+        || !chosen
+        || !chosen.alive
+        || !prompt.candidateIds?.includes(chosen.id)
+      ) {
+        return state;
+      }
+
+      pushHistory(state);
+      if (Number.isFinite(prompt.restorePower)) {
+        shadow.power = prompt.restorePower;
+      }
+      shadow.alive = true;
+      shadow.destroyedAtTurn = null;
+      refreshUnitPresentation(shadow);
+      addDirectPower(state, chosen, -(prompt.shadowPower || 0), {
+        sourceUnit: shadow,
+        sourceUnitId: shadow.id,
+        ignoreDirectPowerImmunity: true,
+      });
+      addLog(state, "hook", `【记忆结晶】发动：${chosen.name} 承担了 ${prompt.shadowPower || 0} 点代价，${shadow.name} 免于被摧毁。`, {
+        unitId: shadow.id,
+        targetUnitId: chosen.id,
+      });
+      state.battle.memoryCrystalPrompt = null;
+      enforcePowerBounds(state, chosen, {
+        cause: "memory-crystal-cost",
+        sourceUnitId: shadow.id,
+      });
+      if (prompt.resumeFlow?.kind === "after-enemy-confirm") {
+        clearTurnEndBuffs(state);
+        clearStage3TurnScopedEffects(state);
+        state.battle.status = "PLAYER_TURN";
+        addLog(state, "system", `第 ${state.battle.turn} 回合开始。`);
+        runStageTurnStartHooks(state);
+        runStageBattleEvents(state, "turn-start");
+      }
+      evaluateBattleState(state, "memory-crystal");
+      return state;
+    }
+
+    if (state.phase === "BATTLE" && state.battle?.memoryCrystalPrompt && action !== "undo" && action !== "give-up") {
+      return state;
+    }
+
     if (action === "next-battle-event") {
       if (state.phase !== "BATTLE" || !state.battle?.eventState?.active) {
         return state;
@@ -2006,11 +2217,12 @@ module.exports = class LibraryRun1Runtime extends BaseGame {
       }
 
       pushHistory(state);
-      if (state.story.sceneId === "tutorial-pre" && state.story.index === 0 && !state.campaign.mode) {
+      if (state.story.sceneId === "intro" && state.story.index === 0 && !state.campaign.mode) {
         state.phase = "MODE_SELECT";
         state.modeSelectResume = {
-          sceneId: "tutorial-pre",
-          index: 1,
+          sceneId: "prologue",
+          index: 0,
+          flowIndex: 1,
         };
         state.battle = null;
         return state;
@@ -2046,8 +2258,11 @@ module.exports = class LibraryRun1Runtime extends BaseGame {
         moveToFlow(state, jumpIndex);
       } else if (state.modeSelectResume) {
         state.phase = "STORY";
-        state.story = buildStoryState(state.modeSelectResume.sceneId);
+        state.story = buildStoryState(state.modeSelectResume.sceneId, state.campaign.mode);
         state.story.index = state.modeSelectResume.index;
+        if (typeof state.modeSelectResume.flowIndex === "number") {
+          state.flowIndex = state.modeSelectResume.flowIndex;
+        }
         state.storyBackground = getStoryPageBackground(
           state.story.pages[state.story.index],
           state.storyBackground || "default"
@@ -2084,6 +2299,13 @@ module.exports = class LibraryRun1Runtime extends BaseGame {
       state.battle.pendingEnemyAction = null;
 
       executePendingEnemyAction(state, pendingAction);
+
+      if (state.battle.memoryCrystalPrompt) {
+        state.battle.memoryCrystalPrompt.resumeFlow = {
+          kind: "after-enemy-confirm",
+        };
+        return state;
+      }
 
       if (state.battle.pendingEnemyAction) {
         state.battle.status = "ENEMY_CONFIRM";
@@ -2196,6 +2418,9 @@ module.exports = class LibraryRun1Runtime extends BaseGame {
           amount: shadowCost,
         });
         enforcePowerBounds(state, caster, { cause: "shadow-ability-cost", sourceUnitId: caster.id });
+        if (state.battle.memoryCrystalPrompt) {
+          return state;
+        }
         if (evaluateBattleState(state, "shadow-ability-cost")) {
           return state;
         }
@@ -2273,6 +2498,9 @@ module.exports = class LibraryRun1Runtime extends BaseGame {
           amount: shadowCost,
         });
         enforcePowerBounds(state, caster, { cause: "shadow-ability-cost", sourceUnitId: caster.id });
+        if (state.battle.memoryCrystalPrompt) {
+          return state;
+        }
         if (evaluateBattleState(state, "shadow-ability-cost")) {
           return state;
         }
@@ -2403,21 +2631,11 @@ module.exports = class LibraryRun1Runtime extends BaseGame {
       });
     }
 
-    if (attacker.abilityCode === "gateway-b-cell" || attacker.abilityCode === "s3-memory-gateway") {
-      const supportIds = attacker.abilityCode === "gateway-b-cell"
-        ? sortByPriority(getFriendlySupportUnits(state, attacker, "player")
-          .filter((unit) => unit.alive)
-          .filter((unit) => unit.code === "patrol-monocyte" || unit.code === "cleaner-lysosome"))
-            .map((unit) => unit.id)
-        : sortByPriority(getFriendlySupportUnits(state, attacker, "player")
-          .filter((unit) => unit.alive)
-          .filter((unit) => unit.id !== attacker.id)
-          .filter((unit) => (
-            unit.abilityCode === "s3-memory-signal"
-            || unit.abilityCode === "s3-memory-kite"
-            || unit.abilityCode === "s3-memory-waterbell"
-          )))
-            .map((unit) => unit.id);
+    if (attacker.abilityCode === "gateway-b-cell") {
+      const supportIds = sortByPriority(getFriendlySupportUnits(state, attacker, "player")
+        .filter((unit) => unit.alive)
+        .filter((unit) => unit.code === "patrol-monocyte" || unit.code === "cleaner-lysosome"))
+          .map((unit) => unit.id);
 
       state.battle.pendingEnemyAction = createPendingAction(state, {
         kind: "gateway-burst",
@@ -2435,6 +2653,11 @@ module.exports = class LibraryRun1Runtime extends BaseGame {
         source: "player-attack",
         controllerSide: "player",
       });
+    }
+
+    if (state.battle.memoryCrystalPrompt) {
+      state.battle.status = "PLAYER_TURN";
+      return state;
     }
 
     state.battle.pendingTurnEffects.overloadPower = null;

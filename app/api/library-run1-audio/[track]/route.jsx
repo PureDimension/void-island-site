@@ -4,6 +4,8 @@ import path from "path";
 const TRACK_FILE_MAP = {
   tutorial: "tutorial.mp3",
   story: "story.mp3",
+  prepare: "prepare.mp3",
+  prologue: "prologue.mp3",
   stage1: "stage1.mp3",
   stage2: "stage2.mp3",
   stage3_story_a: "stage3_story_a.mp3",

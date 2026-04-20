@@ -5,10 +5,10 @@ const STAGE_3_ID = "stage3-core";
 const FINAL_SCENE_ID = "final-story";
 
 const FLOW = [
+  { type: "story", sceneId: "intro" },
+  { type: "story", sceneId: "prologue" },
   { type: "story", sceneId: "tutorial-pre" },
   { type: "battle", stageId: TUTORIAL_STAGE_ID },
-  { type: "story", sceneId: "tutorial-post" },
-  { type: "story", sceneId: "tutorial-post-unlock", requiresMode: "story" },
   { type: "story", sceneId: "stage1-pre" },
   { type: "battle", stageId: STAGE_1_ID },
   { type: "story", sceneId: "stage2-pre" },
