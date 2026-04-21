@@ -95,7 +95,7 @@ module.exports.TIME_LOOP_BUFF = BUFF_CATALOG["time-loop"].key;
 
 BUFF_CATALOG["cognitive-dissonance"].label = "认知失调";
 BUFF_CATALOG["cognitive-dissonance"].shortLabel = "认知失调";
-BUFF_CATALOG["cognitive-dissonance"].description = "战斗时，对方 POWER 视为指定值（本场战斗不触发）。新的【认知失调】会覆盖旧的同类状态。";
+BUFF_CATALOG["cognitive-dissonance"].description = "当持有该状态的单位发生战斗时，本场战斗自身 POWER 视为指定值；不影响正逆位和时空闭环。";
 BUFF_CATALOG["time-loop"].label = "时空闭环";
 BUFF_CATALOG["time-loop"].shortLabel = "时空闭环";
 BUFF_CATALOG["time-loop"].description = "广域能力。任意单位发生战斗时，若玩家方参战单位的 POWER 命中任一已生效值，则该战斗直接失败。新的【时空闭环】会继续追加记录值。";

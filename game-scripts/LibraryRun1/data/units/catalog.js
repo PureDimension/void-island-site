@@ -206,38 +206,12 @@ function stage3BookHooks(effectHandlers = {}) {
         const stance = runtime.getStage3Stance(self);
         self.runtimeState.stage3LastStance = stance;
 
-        if (stance === "balanced") {
-          runtime.addLog(state, "hook", `${self.name} 处于【平衡】状态，攻击前自毁。`, {
-            unitId: self.id,
-            targetUnitId: target?.id || null,
-          });
-          combatControl.skipResolution = true;
-          runtime.destroyUnit(state, self, "stage3-balance-self-destroy", {
-            opponent: target,
-            attacker: self,
-            defender: target,
-          });
-          return;
-        }
-
         if (stance === "upright") {
-          combatControl.skipResolution = true;
-          effectHandlers.onUpright?.(runtime, state, { self, target, attacker, defender, combatControl });
-          if (self.alive) {
-            runtime.stage3InvertUnit(state, self, self);
-          }
+          effectHandlers.onUprightBefore?.(runtime, state, { self, target, attacker, defender, combatControl });
           return;
         }
 
         effectHandlers.onReversedBefore?.(runtime, state, { self, target, attacker, defender, combatControl });
-      },
-    ],
-    preventCombatDestruction: [
-      (runtime, state, { self, threatenedUnit }) => {
-        if (self.id !== threatenedUnit.id || !self.runtimeState?.stage3Seal) {
-          return false;
-        }
-        return runtime.getStage3Stance(self) !== "balanced";
       },
     ],
     afterCombat: [
@@ -251,7 +225,16 @@ function stage3BookHooks(effectHandlers = {}) {
 
         const target = defender;
         const stance = self.runtimeState?.stage3LastStance || runtime.getStage3Stance(self);
-        if (stance === "reversed") {
+        if (stance === "upright") {
+          effectHandlers.onUprightAfter?.(runtime, state, {
+            self,
+            target,
+            attacker,
+            defender,
+            combatControl,
+            ...rest,
+          });
+        } else if (stance === "reversed") {
           effectHandlers.onReversedAfter?.(runtime, state, {
             self,
             target,
@@ -260,9 +243,9 @@ function stage3BookHooks(effectHandlers = {}) {
             combatControl,
             ...rest,
           });
-          if (self.alive) {
-            runtime.stage3InvertUnit(state, self, self);
-          }
+        }
+        if (self.alive) {
+          runtime.stage3InvertUnit(state, self, self);
         }
       },
     ],
@@ -594,7 +577,7 @@ const UNIT_CATALOG = {
     },
   }),
   "gateway-b-cell": defineUnit({
-    name: "调度B细胞-网关",
+    name: "【雪鹿】",
     power: 6,
     description: `▲：本单位主动攻击之前，令己方中 POWER 最高且没有任何 BUFF 的一个单位获得【${BUFF_CATALOG[ANTIBODY_BUFF].shortLabel}】。`
       + "攻击目标固定为没有【标记】且没有【抗体】、并且 POWER 最高的另一个单位。"
@@ -1813,6 +1796,220 @@ UNIT_CATALOG["s3-memory-firefly"] = defineUnit({
         runtime.applyAbilitySnapshotToUnit(self, snapshot);
         runtime.addLog(state, "hook", `${self.name} 继承了上一个被摧毁己方单位的能力。`, {
           unitId: self.id,
+        });
+      },
+    ],
+  },
+});
+
+const STAGE3_MAIN_BOOK_IDS = [
+  "s3-book-element",
+  "s3-book-strength",
+  "s3-book-soul",
+  "s3-book-space",
+];
+
+function stage3EnemyUnitsByControl(runtime, state, side) {
+  return runtime.getAllUnits(state.battle)
+    .filter((unit) => unit.alive)
+    .filter((unit) => runtime.getControlSide(unit) === side);
+}
+
+function stage3PickLeftmostByPower(runtime, units, mode, reference) {
+  return runtime.pickByPower(units, mode, reference);
+}
+
+function stage3PickLowestUnprotectedLoopPower(state) {
+  const protect = state?.battle?.stageRuntime?.stage3TimeLoopProtect || [];
+  for (let value = 0; value <= 9; value += 1) {
+    if (!protect.includes(value)) {
+      return value;
+    }
+  }
+  return null;
+}
+
+function stage3PickHighestUndestroyedLoopPower(state) {
+  const destroy = state?.battle?.stageRuntime?.stage3TimeLoopDestroy || [];
+  for (let value = 9; value >= 0; value -= 1) {
+    if (!destroy.includes(value)) {
+      return value;
+    }
+  }
+  return null;
+}
+
+UNIT_CATALOG["s3-alchemist-carter"] = defineUnit({
+  name: "炼金术士卡特",
+  power: 0,
+  description: "●【永恒】：每个敌方回合开始时，复活全部已被摧毁的友方单位；本单位本轮不可攻击或协同攻击。●【终局】：本关 NE 的阶段要求依次为 2 / 3 / 4 / 5 / 6；若回合结束时本单位已死亡，且本回合敌方连续攻击次数达到当前要求，则击破一个阶段并进入下一阶段。●【TURN5】：立刻复活全部电脑方单位，将元素之书和灵魂之书【真伪逆转】；所有敌方主单位获得“协同攻击-<上一个单位>”。",
+  tags: ["●"],
+  runtimeState: {
+    stage3Book: true,
+  },
+  viewHooks: {
+    inspectorEntries: [
+      (runtime, battle) => {
+        const thresholds = battle?.stageRuntime?.stage3EndgameThresholds || [];
+        const index = battle?.stageRuntime?.stage3EndgameIndex || 0;
+        const value = thresholds[index];
+        return Number.isFinite(value)
+          ? { key: "当前终局要求", value: `连续攻击 ≥ ${value}` }
+          : null;
+      },
+    ],
+  },
+});
+
+UNIT_CATALOG["s3-book-element"] = defineUnit({
+  ...UNIT_CATALOG["s3-book-element"],
+  description: "【正位】攻击后，使对方 POWER -X，X = 自身 POWER。 【逆位】攻击前，使全体玩家方单位 POWER -1。攻击后【真伪逆转】。",
+  hooks: buildStage3AttackBookHooks({
+    onUprightAfter: (runtime, state, { self, target, attacker, defender }) => {
+      if (!target?.alive) {
+        return;
+      }
+      const amount = runtime.getCombatSeenPower(self, { attacker, defender });
+      runtime.addDirectPower(state, target, -amount, {
+        sourceUnit: self,
+        sourceUnitId: self.id,
+      });
+      runtime.addLog(state, "hook", `${self.name} 以【正位】使 ${target.name} 的 POWER -${amount}。`, {
+        unitId: self.id,
+        targetUnitId: target.id,
+      });
+      runtime.enforcePowerBounds(state, target, { cause: "stage3-element-upright", sourceUnitId: self.id });
+    },
+    onReversedBefore: (runtime, state, { self }) => {
+      stage3EnemyUnitsByControl(runtime, state, "player").forEach((unit) => {
+        runtime.addDirectPower(state, unit, -1, {
+          sourceUnit: self,
+          sourceUnitId: self.id,
+        });
+        runtime.addLog(state, "hook", `${self.name} 以【逆位】使 ${unit.name} 的 POWER -1。`, {
+          unitId: self.id,
+          targetUnitId: unit.id,
+        });
+        runtime.enforcePowerBounds(state, unit, { cause: "stage3-element-reversed", sourceUnitId: self.id });
+      });
+    },
+  }),
+});
+
+UNIT_CATALOG["s3-book-strength"] = defineUnit({
+  ...UNIT_CATALOG["s3-book-strength"],
+  description: "【正位】攻击后，使己方 POWER 最低的单位 POWER +X，X = 自身 POWER。若并列，按从左到右。 【逆位】攻击前，使己方 POWER 最低的两个单位 POWER +3。若并列，按从左到右。攻击后【真伪逆转】。",
+  hooks: buildStage3AttackBookHooks({
+    onUprightAfter: (runtime, state, { self }) => {
+      const allies = stage3EnemyUnitsByControl(runtime, state, runtime.getControlSide(self));
+      const recipient = stage3PickLeftmostByPower(runtime, allies, "lowest", self);
+      if (!recipient) {
+        return;
+      }
+      runtime.addDirectPower(state, recipient, self.power, {
+        sourceUnit: self,
+        sourceUnitId: self.id,
+      });
+      runtime.addLog(state, "hook", `${self.name} 以【正位】使 ${recipient.name} 的 POWER +${self.power}。`, {
+        unitId: self.id,
+        targetUnitId: recipient.id,
+      });
+      runtime.enforcePowerBounds(state, recipient, { cause: "stage3-strength-upright", sourceUnitId: self.id });
+    },
+    onReversedBefore: (runtime, state, { self }) => {
+      const allies = stage3EnemyUnitsByControl(runtime, state, runtime.getControlSide(self))
+        .sort((a, b) => a.power - b.power || a.slot - b.slot)
+        .slice(0, 2);
+      allies.forEach((recipient) => {
+        runtime.addDirectPower(state, recipient, 3, {
+          sourceUnit: self,
+          sourceUnitId: self.id,
+        });
+        runtime.addLog(state, "hook", `${self.name} 以【逆位】使 ${recipient.name} 的 POWER +3。`, {
+          unitId: self.id,
+          targetUnitId: recipient.id,
+        });
+        runtime.enforcePowerBounds(state, recipient, { cause: "stage3-strength-reversed", sourceUnitId: self.id });
+      });
+    },
+  }),
+});
+
+UNIT_CATALOG["s3-book-soul"] = defineUnit({
+  ...UNIT_CATALOG["s3-book-soul"],
+  description: "【正位】攻击前，使玩家方 POWER 最高的单位获得【认知失调 X】，X = 自身 POWER。若并列，按从左到右。 【逆位】攻击后，使所有 POWER 高于 X 的玩家方单位获得【认知失调 X】，X = 自身 POWER。 【认知失调 X】：当持有该状态的单位发生战斗时，本场战斗自身 POWER 视为 X；不影响正逆位和时空闭环。攻击后【真伪逆转】。",
+  hooks: buildStage3AttackBookHooks({
+    onUprightBefore: (runtime, state, { self }) => {
+      const targets = stage3EnemyUnitsByControl(runtime, state, "player");
+      const recipient = stage3PickLeftmostByPower(runtime, targets, "highest", self);
+      if (!recipient) {
+        return;
+      }
+      recipient.runtimeState = recipient.runtimeState || {};
+      recipient.runtimeState.selfPowerFixed = self.power;
+      runtime.addLog(state, "hook", `${self.name} 以【正位】使 ${recipient.name} 获得【认知失调 ${self.power}】。`, {
+        unitId: self.id,
+        targetUnitId: recipient.id,
+      });
+    },
+    onReversedAfter: (runtime, state, { self }) => {
+      stage3EnemyUnitsByControl(runtime, state, "player")
+        .filter((unit) => unit.power > self.power)
+        .forEach((unit) => {
+          unit.runtimeState = unit.runtimeState || {};
+          unit.runtimeState.selfPowerFixed = self.power;
+          runtime.addLog(state, "hook", `${self.name} 以【逆位】使 ${unit.name} 获得【认知失调 ${self.power}】。`, {
+            unitId: self.id,
+            targetUnitId: unit.id,
+          });
+        });
+    },
+  }),
+});
+
+UNIT_CATALOG["s3-book-space"] = defineUnit({
+  ...UNIT_CATALOG["s3-book-space"],
+  description: "【正位】攻击前，使一个最低的、未被【保护】的 POWER 值获得【时空闭环-保护】。 【逆位】攻击前，使一个最高的、未被【摧毁】的 POWER 值获得【时空闭环-摧毁】。 【时空闭环-保护 X】：仅作用于敌方单位。敌方单位以 POWER X 进入战斗时，直到攻击与攻击后效果全部结算完毕后才会被摧毁。 【时空闭环-摧毁 X】：仅作用于敌方单位。敌方单位以 POWER X 进入战斗时，本场战斗电脑方必定胜利。 【保护】与【摧毁】可以重叠在同一个 POWER 值上。攻击后【真伪逆转】。",
+  hooks: buildStage3AttackBookHooks({
+    onUprightBefore: (runtime, state, { self }) => {
+      const value = stage3PickLowestUnprotectedLoopPower(state);
+      if (!Number.isFinite(value)) {
+        return;
+      }
+      runtime.addStage3GlobalLoop(state, "protect", value);
+      runtime.addLog(state, "hook", `${self.name} 以【正位】使 POWER ${value} 获得【时空闭环-保护】。`, {
+        unitId: self.id,
+      });
+    },
+    onReversedBefore: (runtime, state, { self }) => {
+      const value = stage3PickHighestUndestroyedLoopPower(state);
+      if (!Number.isFinite(value)) {
+        return;
+      }
+      runtime.addStage3GlobalLoop(state, "destroy", value);
+      runtime.addLog(state, "hook", `${self.name} 以【逆位】使 POWER ${value} 获得【时空闭环-摧毁】。`, {
+        unitId: self.id,
+      });
+    },
+  }),
+});
+
+UNIT_CATALOG["s3-memory-waterbell"] = defineUnit({
+  ...UNIT_CATALOG["s3-memory-waterbell"],
+  hooks: {
+    beforeCombat: [
+      (runtime, state, { self, attacker, defender, combatControl }) => {
+        if (!(self.alive && isStage3CombatAttacker(self, attacker) && defender?.alive)) {
+          return;
+        }
+        if (defender.runtimeState?.selfPowerFixed == null) {
+          return;
+        }
+        combatControl.reverseOutcome = true;
+        delete defender.runtimeState.selfPowerFixed;
+        runtime.addLog(state, "hook", `${self.name} 反转了本场战斗结果，并清除了 ${defender.name} 身上的【认知失调】。`, {
+          unitId: self.id,
+          targetUnitId: defender.id,
         });
       },
     ],

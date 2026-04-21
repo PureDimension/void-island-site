@@ -122,7 +122,7 @@ const TARGET_RULE_RUNTIME = {
 
 function getDerivedBuffKeys(unit) {
   const derived = [];
-  if (unit?.runtimeState?.opponentPowerFixed != null) {
+  if (unit?.runtimeState?.selfPowerFixed != null) {
     derived.push(COGNITIVE_DISSONANCE_BUFF);
   }
   return derived;
@@ -318,10 +318,10 @@ function getStage3Polarity(unit) {
   if (!(unit?.runtimeState?.stage3Seal || unit?.runtimeState?.stage3Book) || !unit.alive) {
     return null;
   }
-  if (unit.runtimeState?.stage3StanceSnapshot === "upright") {
+  if (unit.power >= 0 && unit.power <= 4) {
     return "upright";
   }
-  if (unit.runtimeState?.stage3StanceSnapshot === "reversed") {
+  if (unit.power >= 5 && unit.power <= 9) {
     return "reversed";
   }
   return null;
@@ -359,8 +359,8 @@ function buildBuffDescriptions(unit, battle = null) {
     .filter(Boolean)
     .map((buff) => {
       if (buff.key === COGNITIVE_DISSONANCE_BUFF) {
-        const value = unit.runtimeState?.opponentPowerFixed;
-        return `【认知失调：${value}】：战斗时，对方 POWER 视为 ${value}（本场战斗不触发）。新的【认知失调】会覆盖旧的同类状态。`;
+        const value = unit.runtimeState?.selfPowerFixed;
+        return `【认知失调：${value}】：当持有该状态的单位发生战斗时，本场战斗自身 POWER 视为 ${value}；不影响正逆位和时空闭环。`;
       }
       return `【${buff.shortLabel}】：${buff.description}`;
     });
@@ -382,7 +382,7 @@ function buildBuffShortLabels(unit, battle = null) {
     .filter(Boolean)
     .map((buff) => {
       if (buff.key === COGNITIVE_DISSONANCE_BUFF) {
-        const value = unit.runtimeState?.opponentPowerFixed;
+        const value = unit.runtimeState?.selfPowerFixed;
         return `【认知失调：${value}】`;
       }
       return `【${buff.shortLabel}】`;
@@ -405,8 +405,8 @@ function buildBuffDescriptionsUnified(unit, battle = null) {
     .filter(Boolean)
     .map((buff) => {
       if (buff.key === COGNITIVE_DISSONANCE_BUFF) {
-        const value = unit.runtimeState?.opponentPowerFixed;
-        return `【认知失调：${value}】：当持有该状态的单位发生战斗时，对方 POWER 在攻击前、战斗中、攻击后都视为 ${value}。新的【认知失调】会覆盖旧的同类状态。`;
+        const value = unit.runtimeState?.selfPowerFixed;
+        return `【认知失调：${value}】：当持有该状态的单位发生战斗时，本场战斗自身 POWER 视为 ${value}；不影响正逆位和时空闭环。`;
       }
       return `【${buff.shortLabel}】：${buff.description}`;
     });
@@ -428,7 +428,7 @@ function buildBuffShortLabelsUnified(unit, battle = null) {
     .filter(Boolean)
     .map((buff) => {
       if (buff.key === COGNITIVE_DISSONANCE_BUFF) {
-        const value = unit.runtimeState?.opponentPowerFixed;
+        const value = unit.runtimeState?.selfPowerFixed;
         return `【认知失调：${value}】`;
       }
       return `【${buff.shortLabel}】`;

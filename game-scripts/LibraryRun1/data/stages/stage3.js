@@ -102,7 +102,7 @@ function summonEnemy(runtime, state, template, id, slot) {
 }
 
 function applyStage3Turn1(runtime, state) {
-  runtime.setEnemyLogicText(state, stage3EnemyLogicText(state));
+  runtime.setEnemyLogicText(state, stage3EnemyLogicTextV2(state));
   summonPlayer(runtime, state, "s3-memory-impurity", "s3-memory-impurity-1", 4);
   refreshStage3Descriptions(runtime, state);
 }
@@ -151,14 +151,12 @@ function applyStage3Turn5(runtime, state) {
   runtime.stage3InvertUnit(state, runtime.findUnit(battle, "s3-book-element"));
   runtime.stage3InvertUnit(state, runtime.findUnit(battle, "s3-book-soul"));
   assignStage3Cooperation(runtime, state);
-  runtime.setEnemyLogicText(state, stage3EnemyLogicText(state));
+  runtime.setEnemyLogicText(state, stage3EnemyLogicTextV2(state));
   refreshStage3Descriptions(runtime, state);
 }
 
 function applyStage3Turn10(runtime, state) {
-  state.battle.stageRuntime.stage3ForceFirstFailedCoop = true;
-  state.battle.stageRuntime.stage3InstantReviveEnabled = true;
-  runtime.setEnemyLogicText(state, stage3EnemyLogicText(state));
+  runtime.setEnemyLogicText(state, stage3EnemyLogicTextV2(state));
   refreshStage3Descriptions(runtime, state);
 }
 
@@ -299,22 +297,84 @@ function onStage3EnemyTurnStart(runtime, state) {
   refreshStage3Descriptions(runtime, state);
 }
 
+function stage3EnemyLogicTextV2(state) {
+  const runtime = state?.battle?.stageRuntime || {};
+  const lines = [
+    "根据当前回合数 TURN 模 5 的结果，取[元素之书，力量之书，灵魂之书，时空之书，炼金术士卡特]对应的单位，对影子发动攻击。",
+    "敌方主单位正逆位按当前 POWER 即时判定：0-4 为【正位】，5-9 为【逆位】。",
+    "敌方主单位攻击后发动【真伪逆转】。",
+    "【真伪逆转】：使自身 POWER 变为 9 - 原本 POWER。",
+  ];
+
+  if (runtime.stage3CooperationEnabled) {
+    lines.push("【协同攻击-<上一个单位>】：仅敌方五个主单位持有；自己攻击时，若上一个单位与自身正逆位相反，则攻击后对同一目标追加一次攻击；该追加攻击也可继续连锁。");
+  }
+
+  return lines;
+}
+
+function onStage3TurnStartV2(runtime, state) {
+  const battle = state?.battle;
+  if (!battle) {
+    return;
+  }
+
+  runtime.syncStage3StanceSnapshots(state);
+  battle.enemyUnits.forEach((unit) => {
+    if (unit?.runtimeState?.stage3NoAttackTurn === battle.turn) {
+      delete unit.runtimeState.stage3NoAttackTurn;
+    }
+  });
+
+  refreshStage3Descriptions(runtime, state);
+}
+
+function onStage3EnemyTurnStartV2(runtime, state) {
+  const battle = state?.battle;
+  const carter = runtime.findUnit(battle, "s3-alchemist-carter");
+  if (!battle) {
+    return;
+  }
+
+  battle.stageRuntime.stage3EnemyAttackCountThisTurn = 0;
+  runtime.syncStage3StanceSnapshots(state);
+
+  if (!(carter && carter.alive) || carter.power === 10) {
+    refreshStage3Descriptions(runtime, state);
+    return;
+  }
+
+  carter.runtimeState = carter.runtimeState || {};
+  carter.runtimeState.stage3NoAttackTurn = battle.turn;
+
+  battle.enemyUnits
+    .filter((unit) => unit.id !== carter.id && !unit.alive)
+    .forEach((unit) => {
+      if (runtime.reviveUnit(state, unit, "stage3-carter-eternity", carter, "enemy")) {
+        unit.runtimeState = unit.runtimeState || {};
+        delete unit.runtimeState.stage3NoAttackTurn;
+      }
+    });
+
+  refreshStage3Descriptions(runtime, state);
+}
+
 module.exports = {
   stageId: STAGE_3_ID,
   title: "第三关·六书回廊",
   objective: "穿过回廊，击破六书系统。",
-  enemyLogicText: stage3EnemyLogicText({ battle: { stageRuntime: {} } }),
+  enemyLogicText: stage3EnemyLogicTextV2({ battle: { stageRuntime: {} } }),
   enemyAi: "stage3-turn-books",
   runtimeState: {
     stage3CooperationEnabled: false,
-    stage3ForceFirstFailedCoop: false,
     stage3SignalBoostTurn: null,
     stage3BuffNullifyTurn: null,
     stage3BuffNullifySide: null,
     stage3TimeLoopProtect: [],
     stage3TimeLoopDestroy: [],
-    stage3PendingTimeLoopProtect: [],
-    stage3PendingTimeLoopDestroy: [],
+    stage3EndgameThresholds: [2, 3, 4, 5, 6],
+    stage3EndgameIndex: 0,
+    stage3EnemyAttackCountThisTurn: 0,
   },
   lineup: {
     playerUnits: [
@@ -335,8 +395,8 @@ module.exports = {
     ],
   },
   initialLogText: "第三关开始。核心区的墙体崩塌，四面墙化作四本书，为这出舞台剧拉开帷幕。",
-  onTurnStart: onStage3TurnStart,
-  onEnemyTurnStart: onStage3EnemyTurnStart,
+  onTurnStart: onStage3TurnStartV2,
+  onEnemyTurnStart: onStage3EnemyTurnStartV2,
   battleEvents: [
     {
       key: "stage3-turn1-opening",

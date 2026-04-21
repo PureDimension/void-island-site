@@ -1151,6 +1151,8 @@ function Stage3TimeLoopOverlay({ battle }) {
 
   const protect = battle?.stageRuntime?.stage3TimeLoopProtect || [];
   const destroy = battle?.stageRuntime?.stage3TimeLoopDestroy || [];
+  const thresholds = battle?.stageRuntime?.stage3EndgameThresholds || [2, 3, 4, 5, 6];
+  const thresholdIndex = battle?.stageRuntime?.stage3EndgameIndex || 0;
   const leftValues = [0, 1, 2, 3, 4];
   const rightValues = [5, 6, 7, 8, 9];
   const renderGroup = (values) => values.map((value) => (
@@ -1173,6 +1175,19 @@ function Stage3TimeLoopOverlay({ battle }) {
         <div className="stage3-loop-group left">{renderGroup(leftValues)}</div>
         <div className="stage3-loop-gap" />
         <div className="stage3-loop-group right">{renderGroup(rightValues)}</div>
+      </div>
+      <div className="stage3-endgame-row">
+        <div className="stage3-endgame-label">终局阶段</div>
+        <div className="stage3-endgame-values">
+          {thresholds.map((value, index) => (
+            <span
+              key={`endgame-${value}-${index}`}
+              className={`stage3-endgame-value ${index === thresholdIndex ? "active" : ""}`.trim()}
+            >
+              {value}
+            </span>
+          ))}
+        </div>
       </div>
     </div>
   );
@@ -1588,7 +1603,6 @@ export default function LibraryRun1View({ gameState, onAction }) {
     const findAliveUnit = (unitId) => allUnits.find((unit) => unit.id === unitId && unit.alive) || null;
     const result = [];
     const visited = new Set([stage3CurrentAttackerId]);
-    let usedForcedFailure = false;
     let current = findAliveUnit(stage3CurrentAttackerId);
 
     while (current?.alive) {
@@ -1616,14 +1630,8 @@ export default function LibraryRun1View({ gameState, onAction }) {
         (currentPolarity === "upright" && partnerPolarity === "reversed")
         || (currentPolarity === "reversed" && partnerPolarity === "upright")
       );
-      const canForce = !!battle?.stageRuntime?.stage3ForceFirstFailedCoop && !usedForcedFailure;
-
-      if (!isOpposite && !canForce) {
+      if (!isOpposite) {
         break;
-      }
-
-      if (!isOpposite && canForce) {
-        usedForcedFailure = true;
       }
 
       result.push(partner.id);
@@ -1632,7 +1640,7 @@ export default function LibraryRun1View({ gameState, onAction }) {
     }
 
     return result;
-  }, [allUnits, battle?.stageId, battle?.stageRuntime?.stage3CooperationEnabled, battle?.stageRuntime?.stage3ForceFirstFailedCoop, battle?.turn, stage3CurrentAttackerId]);
+  }, [allUnits, battle?.stageId, battle?.stageRuntime?.stage3CooperationEnabled, battle?.turn, stage3CurrentAttackerId]);
 
   const selectedAttacker = allUnits.find((unit) => unit.id === selectedAttackerId) || null;
   const selectedTarget = allUnits.find((unit) => unit.id === selectedTargetId) || null;
@@ -2010,14 +2018,13 @@ export default function LibraryRun1View({ gameState, onAction }) {
     }
 
     return [previewAttacker, previewDefender]
-      .filter((unit) => unit?.runtimeState?.opponentPowerFixed != null)
+      .filter((unit) => unit?.runtimeState?.selfPowerFixed != null)
       .map((holder) => {
         const holderSide = holder.side === "enemy" ? "敌方" : "己方";
-        const affectedSide = holder.side === "enemy" ? "己方" : "敌方";
         return {
-          key: `${holder.id}-${holder.runtimeState.opponentPowerFixed}`,
+          key: `${holder.id}-${holder.runtimeState.selfPowerFixed}`,
           side: holder.side,
-          text: `由于${holderSide}单位持有【认知失调】，${affectedSide}单位战斗时POWER被视为${holder.runtimeState.opponentPowerFixed}。`,
+          text: `由于${holderSide}单位持有【认知失调】，该单位本场战斗自身POWER被视为${holder.runtimeState.selfPowerFixed}。`,
         };
       });
   }, [enemyConfirm, allUnits, selectedAttacker, selectedTarget]);
@@ -3733,7 +3740,7 @@ function StyleBlock() {
         left: 50%;
         top: 50%;
         transform: translate(-50%, -50%);
-        z-index: 10;
+        z-index: 40;
         width: min(420px, calc(100% - 380px));
         padding: 0.95rem 1.05rem;
         border-radius: 22px;
@@ -4070,6 +4077,41 @@ function StyleBlock() {
           linear-gradient(135deg, rgba(132, 255, 198, 0.3) 0%, rgba(132, 255, 198, 0.3) 50%, rgba(255, 130, 130, 0.3) 50%, rgba(255, 130, 130, 0.3) 100%),
           rgba(10, 19, 36, 0.24);
         border-color: rgba(255, 215, 150, 0.56);
+      }
+
+      .stage3-endgame-row {
+        margin-top: 0.55rem;
+        display: flex;
+        align-items: center;
+        gap: 0.8rem;
+      }
+
+      .stage3-endgame-label {
+        color: rgba(222, 240, 255, 0.84);
+        font-size: 0.72rem;
+        letter-spacing: 0.08em;
+        white-space: nowrap;
+      }
+
+      .stage3-endgame-values {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+      }
+
+      .stage3-endgame-value {
+        font-size: 1.35rem;
+        font-weight: 800;
+        color: rgba(235, 243, 255, 0.52);
+        letter-spacing: 0.06em;
+        text-shadow: 0 0 12px rgba(140, 190, 255, 0.12);
+      }
+
+      .stage3-endgame-value.active {
+        color: rgba(255, 228, 120, 0.98);
+        text-shadow:
+          0 0 10px rgba(255, 214, 92, 0.38),
+          0 0 22px rgba(255, 192, 74, 0.22);
       }
 
       .unit-cell.stage3-turn-attacker .unit-shell {

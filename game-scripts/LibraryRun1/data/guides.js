@@ -106,7 +106,7 @@ const GUIDE_SETS = {
   [STAGE_1_ID]: [
     {
       id: "stage1-buff",
-      speaker: "水铃儿",
+      speaker: "未雨",
       text: "这一关里，除了前面见过的能力时点，我们还多了一种东西叫 BUFF。BUFF 也可以看作一种能力，只是它会临时挂在单位身上，并跟着单位一起流转。",
       mode: "manual",
       highlights: [{ type: "unit", id: "p-emp-module" }, { type: "area", id: "panel-buffs" }],
@@ -114,22 +114,22 @@ const GUIDE_SETS = {
     },
     {
       id: "stage1-cipher",
-      speaker: "水铃儿",
+      speaker: "未雨",
       text: "再看一眼密文。它不能被正常选为攻击目标，所以不能按普通敌人的思路处理，得想特殊办法。",
       mode: "manual",
       highlights: [{ type: "unit", id: "e-cipher" }, { type: "area", id: "panel-description" }],
     },
     {
       id: "stage1-disguise",
-      speaker: "水铃儿",
-      text: "最后看一下伪装模块。对敌方来说，它会被当成友军；对我们平时的选敌逻辑来说，它又会被当成敌方单位。但你仍然可以直接操控它作为攻击者，去主动攻击真正的敌人。",
+      speaker: "未雨",
+      text: "最后看一下伪装模块，这也是我们之前准备的小玩意。对敌方来说，它会被当成友军；对我们平时的选敌逻辑来说，它又会被当成敌方单位。但你仍然可以直接操控它作为攻击者，去主动攻击真正的敌人。",
       mode: "manual",
       highlights: [{ type: "unit", id: "p-disguise-module" }, { type: "area", id: "panel-description" }],
     },
     {
       id: "stage1-sequence",
-      speaker: "水铃儿",
-      text: "再记一个细节。只要描述里写的是“符合条件的一个单位”，而符合条件的单位不止一个，就按顺位机制决定：优先敌方，同阵营则取玩家视角最左边的那个。",
+      speaker: "未雨",
+      text: "再记一个小细节。只要描述里写的是“符合条件的一个单位”，而符合条件的单位不止一个，就按顺位机制决定：优先选择能力发动者的敌方，同阵营则取最左边的那个。偶尔在计算中会有用到的时候。",
       mode: "manual",
       highlights: [{ type: "panel", id: "enemy-script" }],
       addRules: ["sequence"],
@@ -139,7 +139,7 @@ const GUIDE_SETS = {
     {
       id: "stage2-wide-area",
       speaker: "萤草",
-      text: "先看补体屏障。第二关开始会多一种新的能力标识：※。这代表广域能力，也就是单位不必亲自参战，也能持续影响战场。补体屏障就会替更高 POWER 的同伴挡下致命一击。",
+      text: "先看补体屏障，这是他们持久作战的关键。第二关开始会多一种新的能力标识：※。这代表广域能力，也就是单位不必亲自参战，也能持续影响战场。补体屏障就会替更高 POWER 的同伴挡下致命一击。",
       mode: "manual",
       highlights: [{ type: "unit", id: "s2-complement" }, { type: "area", id: "unit-tags" }, { type: "area", id: "panel-description" }],
       addRules: ["wideArea"],
@@ -147,14 +147,14 @@ const GUIDE_SETS = {
     {
       id: "stage2-core-enemies",
       speaker: "萤草",
-      text: "这关真正要对付的核心，是巨噬细胞-指挥、调度B细胞-网关和杀手T细胞-协议。战斗节奏基本都围着这三个单位转。",
+      text: "这关真正要对付的核心，是巨噬细胞-指挥、雪鹿和杀手T细胞-协议。战斗发起者也一直是这三个单位。",
       mode: "manual",
       highlights: [{ type: "unit", id: "s2-macrophage" }, { type: "unit", id: "s2-gateway" }, { type: "unit", id: "s2-killer" }],
     },
     {
       id: "stage2-core-enemies",
       speaker: "萤草",
-      text: "这三个单位都有可能攻击到友军，即使它们有【抗体】【标记】用来区分友方和敌方，也总是会出错，这一点可以多加利用。",
+      text: "这三个单位都有可能攻击到友军，他们的攻击中并没有规定必须是敌军。但是前两者会给最可能被误伤的友军挂上识别用的【抗体】，而后者则是依赖于【标记】决定目标。",
       mode: "manual",
       highlights: [{ type: "unit", id: "s2-macrophage" }, { type: "unit", id: "s2-gateway" }, { type: "unit", id: "s2-killer" }],
     },
@@ -168,7 +168,7 @@ const GUIDE_SETS = {
     {
       id: "stage2-gateway",
       speaker: "萤草",
-      text: "调度B细胞-网关自己不直接动手，它会调度并复活后面那三个小兵。只要它还在，敌方的小单位就会不断回到场上，尤其是和补体屏障的联动将会非常难以处理。",
+      text: "雪鹿自己不直接动手，它会调度并复活后面那三个小兵。只要它还在，敌方的小单位就会不断回到场上，尤其是和补体屏障的联动将会非常难以处理。",
       mode: "manual",
       highlights: [
         { type: "unit", id: "s2-gateway" },
@@ -180,21 +180,21 @@ const GUIDE_SETS = {
     {
       id: "stage2-killer",
       speaker: "萤草",
-      text: "杀手T细胞-协议专门盯着带【标记】的对象下死手。你一开场就已经被挂上了【标记】；POWER 旁边那个红色十字标记就是【标记】的样子，而且全场同一时间只会存在一个【标记】。",
+      text: "杀手T细胞-协议专门盯着带【标记】的对象下死手。你一开场就已经被挂上了【标记】；POWER 旁边那个红色十字标记就是【标记】的样子。但是全场同一时间只会存在一个【标记】，新的会顶掉旧的。",
       mode: "manual",
       highlights: [{ type: "unit", id: "s2-killer" }, { type: "unit", id: "p-robot" }, { type: "area", id: "power-readout" }],
     },
     {
       id: "stage2-order",
       speaker: "萤草",
-      text: "再看右侧规则。敌方会严格按“巨噬细胞 → B细胞 → T细胞”的顺序轮值行动，这就是你拆节奏时最重要的依据。",
+      text: "再看右侧规则。敌方会严格按“巨噬细胞 → 雪鹿 → T细胞”的顺序轮值行动，这就是你应对时最重要的依据。",
       mode: "manual",
       highlights: [{ type: "panel", id: "enemy-script" }],
     },
     {
       id: "stage2-tools",
       speaker: "萤草",
-      text: "最后看你这边。灯笼能获得敌方的能力，也会同时复制对方的抗体机制和攻击目标描述，导致自己的攻击目标不可手动指定；噬菌体能挂【病毒】扭曲敌我判断。如何在被巨噬细胞吃掉前利用两个单位是本关通关的秘诀。",
+      text: "最后看看我给你准备的小工具。灯笼能获得敌方的能力，也会同时复制对方的抗体机制和攻击目标描述，导致自己的攻击目标不可手动指定；噬菌体能挂【病毒】扭曲敌我判断。如何在被巨噬细胞吃掉前利用两个单位是本关通关的秘诀。",
       mode: "manual",
       highlights: [
         { type: "unit", id: "p-lantern" },
