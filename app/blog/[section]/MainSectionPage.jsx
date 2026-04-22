@@ -105,6 +105,11 @@ export default function MainSectionPage({ posts, section_name }) {
 					title={modalPost.title}
 					excerpt={modalPost.excerpt}
 					content={modalPost.content}
+					encrypted={modalPost.encrypted}
+					verify={modalPost.verify}
+					salt={modalPost.salt}
+					iv={modalPost.iv}
+					iterations={modalPost.iterations}
 					onClose={() => handleSetModalSlug(null)}
 					isMobile={isMobile}
 				/>

@@ -104,6 +104,11 @@ export default function HomeContent({ selfIntroPosts, headlinePosts }) {
             title={selectedPost.title}
             excerpt={selectedPost.excerpt}
             content={selectedPost.content}
+            encrypted={selectedPost.encrypted}
+            verify={selectedPost.verify}
+            salt={selectedPost.salt}
+            iv={selectedPost.iv}
+            iterations={selectedPost.iterations}
             onClose={closeModal}
             isMobile={isMobile}
             forceTheme={filterOn}

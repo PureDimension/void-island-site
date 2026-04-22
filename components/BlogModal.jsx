@@ -5,20 +5,31 @@ import ReactMarkdown from "react-markdown";
 import rehypeRaw from "rehype-raw";
 import remarkGfm from "remark-gfm";
 import { useTheme } from "@/lib/theme";
+import EncryptedBlogContent from "@/components/EncryptedBlogContent";
 
-export default function BlogModal({ title, excerpt, content, onClose, isMobile, forceTheme = null }) {
+export default function BlogModal({
+  title,
+  excerpt,
+  content,
+  onClose,
+  isMobile,
+  forceTheme = null,
+  encrypted = false,
+  verify = null,
+  salt = null,
+  iv = null,
+  iterations = null,
+}) {
   const modalRef = useRef(null);
   const [loading, setLoading] = useState(false);
-  const [markdown, setMarkdown] = useState(content || "");
+  const [markdown, setMarkdown] = useState(encrypted ? "" : content || "");
 
-  // 支持点击遮罩关闭
   function handleMaskClick(e) {
     if (e.target === e.currentTarget) {
       onClose();
     }
   }
 
-  // 解决手机浏览器出现顶部导航栏时，100vh不受影响，引起的跳变问题
   const [height, setHeight] = useState(0);
   const { isDarkMode: globalIsDarkMode } = useTheme();
   const isDarkMode = forceTheme !== null ? forceTheme : globalIsDarkMode;
@@ -26,7 +37,7 @@ export default function BlogModal({ title, excerpt, content, onClose, isMobile, 
   useEffect(() => {
     const updateHeight = () => {
       const fullHeight = window.innerHeight;
-      const calcHeight = fullHeight - 140; // 对应你原来的 calc(100vh - 140px)
+      const calcHeight = fullHeight - 140;
       setHeight(calcHeight);
     };
 
@@ -34,6 +45,10 @@ export default function BlogModal({ title, excerpt, content, onClose, isMobile, 
     window.addEventListener("resize", updateHeight);
     return () => window.removeEventListener("resize", updateHeight);
   }, []);
+
+  useEffect(() => {
+    setMarkdown(encrypted ? "" : content || "");
+  }, [content, encrypted]);
 
   return (
     <div
@@ -53,26 +68,47 @@ export default function BlogModal({ title, excerpt, content, onClose, isMobile, 
         }}
         onClick={(e) => e.stopPropagation()}
       >
-        {/* 关闭按钮 */}
         <button
           onClick={onClose}
-          className={`absolute top-4 right-4 flex items-center justify-center w-8 h-8 rounded-full border-2 ${isDarkMode? "border-white text-white hover:bg-gray-600" : "border-black text-black hover:bg-gray-200"} font-bold  transition`}
+          className={`absolute top-4 right-4 flex items-center justify-center w-8 h-8 rounded-full border-2 ${
+            isDarkMode
+              ? "border-white text-white hover:bg-gray-600"
+              : "border-black text-black hover:bg-gray-200"
+          } font-bold transition`}
         >
           X
         </button>
 
-        {/* 内容区域 */}
-        <div className={`${isDarkMode? "bg-black text-white darkTheme-scrollbar" : "bg-white text-black"} p-6 overflow-y-auto h-full`}>
-          {/* Title & Excerpt */}
+        <div
+          className={`${
+            isDarkMode ? "bg-black text-white darkTheme-scrollbar" : "bg-white text-black"
+          } p-6 overflow-y-auto h-full`}
+        >
           <div className="mb-6">
             {title && <h1 className="text-3xl font-bold text-center">{title}</h1>}
             {excerpt && (
-              <p className={`text-xl italic text-center ${isDarkMode ? "text-gray-400" : "text-gray-600"} mt-2`}>{excerpt}</p>
+              <p
+                className={`text-xl italic text-center ${
+                  isDarkMode ? "text-gray-400" : "text-gray-600"
+                } mt-2`}
+              >
+                {excerpt}
+              </p>
             )}
           </div>
 
           {loading ? (
             <p className="text-center">加载中...</p>
+          ) : encrypted && !markdown ? (
+            <EncryptedBlogContent
+              ciphertext={content}
+              verify={verify}
+              salt={salt}
+              iv={iv}
+              iterations={iterations}
+              isDarkMode={isDarkMode}
+              onUnlock={setMarkdown}
+            />
           ) : (
             <ReactMarkdown
               rehypePlugins={[rehypeRaw]}
@@ -108,21 +144,21 @@ export default function BlogModal({ title, excerpt, content, onClose, isMobile, 
                   </pre>
                 ),
                 blockquote: ({ children }) => (
-                  <blockquote className={`border-l-4 border-gray-400 pl-4 italic ${isDarkMode ? "text-gray-300" : "text-gray-700"} mb-3`}>
+                  <blockquote
+                    className={`border-l-4 border-gray-400 pl-4 italic ${
+                      isDarkMode ? "text-gray-300" : "text-gray-700"
+                    } mb-3`}
+                  >
                     {children}
                   </blockquote>
                 ),
                 a: ({ href, children, ...props }) => (
                   <a
-                    {...props}   // 👈 关键！！保留你在 md 里写的 class / style
+                    {...props}
                     href={href}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className={
-                      props.className
-                        ? props.className
-                        : "text-blue-600 underline"
-                    }
+                    className={props.className ? props.className : "text-blue-600 underline"}
                   >
                     {children}
                   </a>
@@ -133,31 +169,15 @@ export default function BlogModal({ title, excerpt, content, onClose, isMobile, 
                     {children}
                   </table>
                 ),
-                thead: ({ children }) => (
-                  <thead className="bg-gray-200">
-                    {children}
-                  </thead>
-                ),
-                tbody: ({ children }) => (
-                  <tbody>
-                    {children}
-                  </tbody>
-                ),
-                tr: ({ children }) => (
-                  <tr className="border-b border-gray-300">
-                    {children}
-                  </tr>
-                ),
+                thead: ({ children }) => <thead className="bg-gray-200">{children}</thead>,
+                tbody: ({ children }) => <tbody>{children}</tbody>,
+                tr: ({ children }) => <tr className="border-b border-gray-300">{children}</tr>,
                 th: ({ children }) => (
                   <th className="px-4 py-2 border border-gray-400 text-left font-semibold">
                     {children}
                   </th>
                 ),
-                td: ({ children }) => (
-                  <td className="px-4 py-2 border border-gray-400">
-                    {children}
-                  </td>
-                ),
+                td: ({ children }) => <td className="px-4 py-2 border border-gray-400">{children}</td>,
               }}
             >
               {markdown}
