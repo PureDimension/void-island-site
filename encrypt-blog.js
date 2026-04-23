@@ -11,6 +11,10 @@ const PBKDF2_DIGEST = "sha256";
 const IV_LENGTH = 12;
 const SALT_LENGTH = 16;
 
+function utf8Buffer(value) {
+  return Buffer.from(unescape(encodeURIComponent(value)), "binary");
+}
+
 function printUsage() {
   console.log(
     [
@@ -25,7 +29,7 @@ function printUsage() {
 
 function deriveKey(passphrase, saltBuffer) {
   return crypto.pbkdf2Sync(
-    passphrase,
+    utf8Buffer(passphrase),
     saltBuffer,
     PBKDF2_ITERATIONS,
     PBKDF2_KEYLEN,
@@ -36,7 +40,7 @@ function deriveKey(passphrase, saltBuffer) {
 function buildVerify(passphrase, saltBase64, ivBase64) {
   return crypto
     .createHash("sha256")
-    .update(`verify|${saltBase64}|${ivBase64}|${passphrase}`, "utf8")
+    .update(utf8Buffer(`verify|${saltBase64}|${ivBase64}|${passphrase}`))
     .digest("hex");
 }
 

@@ -5,6 +5,11 @@ import { useSearchParams } from "next/navigation";
 
 const DEFAULT_ITERATIONS = 120000;
 
+function utf8ToBytes(value) {
+  const encoded = unescape(encodeURIComponent(value));
+  return Uint8Array.from(encoded, (char) => char.charCodeAt(0));
+}
+
 function base64ToBytes(base64) {
   const binary = window.atob(base64);
   return Uint8Array.from(binary, (char) => char.charCodeAt(0));
@@ -27,7 +32,7 @@ function getPassphraseCandidates(rawValue) {
 }
 
 async function buildVerify(passphrase, salt, iv) {
-  const data = new TextEncoder().encode(`verify|${salt}|${iv}|${passphrase}`);
+  const data = utf8ToBytes(`verify|${salt}|${iv}|${passphrase}`);
   const digest = await window.crypto.subtle.digest("SHA-256", data);
   return bytesToHex(new Uint8Array(digest));
 }
@@ -35,7 +40,7 @@ async function buildVerify(passphrase, salt, iv) {
 async function decryptContent({ ciphertext, passphrase, salt, iv, iterations }) {
   const importedKey = await window.crypto.subtle.importKey(
     "raw",
-    new TextEncoder().encode(passphrase),
+    utf8ToBytes(passphrase),
     "PBKDF2",
     false,
     ["deriveKey"]
