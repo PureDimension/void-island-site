@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
 
 const DEFAULT_ITERATIONS = 120000;
@@ -12,6 +12,18 @@ function base64ToBytes(base64) {
 
 function bytesToHex(bytes) {
   return Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0")).join("");
+}
+
+function getPassphraseCandidates(rawValue) {
+  const base = rawValue ?? "";
+  const candidates = [base];
+
+  if (typeof base.normalize === "function") {
+    candidates.push(base.normalize("NFC"));
+    candidates.push(base.normalize("NFKC"));
+  }
+
+  return [...new Set(candidates)];
 }
 
 async function buildVerify(passphrase, salt, iv) {
@@ -71,15 +83,30 @@ export default function EncryptedBlogContent({
   const [passphrase, setPassphrase] = useState("");
   const [errorMessage, setErrorMessage] = useState("");
   const [isUnlocking, setIsUnlocking] = useState(false);
+  const [isComposing, setIsComposing] = useState(false);
+  const inputValueRef = useRef("");
+
+  const passphraseCandidates = useMemo(
+    () => getPassphraseCandidates(passphrase),
+    [passphrase]
+  );
 
   useEffect(() => {
     const keyFromUrl = searchParams.get("key") || "";
+    inputValueRef.current = keyFromUrl;
     setPassphrase(keyFromUrl);
     setErrorMessage("");
   }, [searchParams, ciphertext]);
 
+  function handleInputChange(nextValue) {
+    inputValueRef.current = nextValue;
+    setPassphrase(nextValue);
+  }
+
   async function handleUnlock() {
-    if (!passphrase) {
+    const rawPassphrase = inputValueRef.current;
+
+    if (!rawPassphrase) {
       setErrorMessage("请输入口令。");
       return;
     }
@@ -93,21 +120,27 @@ export default function EncryptedBlogContent({
     setErrorMessage("");
 
     try {
-      const nextVerify = await buildVerify(passphrase, salt, iv);
-      if (nextVerify !== verify) {
-        setErrorMessage("口令错误，请重新输入。");
+      const candidates = getPassphraseCandidates(rawPassphrase);
+
+      for (const candidate of candidates) {
+        const nextVerify = await buildVerify(candidate, salt, iv);
+        if (nextVerify !== verify) {
+          continue;
+        }
+
+        const markdown = await decryptContent({
+          ciphertext,
+          passphrase: candidate,
+          salt,
+          iv,
+          iterations,
+        });
+
+        onUnlock(markdown);
         return;
       }
 
-      const markdown = await decryptContent({
-        ciphertext,
-        passphrase,
-        salt,
-        iv,
-        iterations,
-      });
-
-      onUnlock(markdown);
+      setErrorMessage("口令错误，请重新输入。");
     } catch {
       setErrorMessage("解密失败，请确认口令和文件格式是否正确。");
     } finally {
@@ -130,9 +163,14 @@ export default function EncryptedBlogContent({
         <input
           type="text"
           value={passphrase}
-          onChange={(event) => setPassphrase(event.target.value)}
+          onChange={(event) => handleInputChange(event.target.value)}
+          onCompositionStart={() => setIsComposing(true)}
+          onCompositionEnd={(event) => {
+            setIsComposing(false);
+            handleInputChange(event.currentTarget.value);
+          }}
           onKeyDown={(event) => {
-            if (event.key === "Enter") {
+            if (event.key === "Enter" && !isComposing) {
               handleUnlock();
             }
           }}
