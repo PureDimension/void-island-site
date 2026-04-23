@@ -107,6 +107,7 @@ export default function BlogModal({
               iv={iv}
               iterations={iterations}
               isDarkMode={isDarkMode}
+              isMobile={isMobile}
               onUnlock={setMarkdown}
             />
           ) : (

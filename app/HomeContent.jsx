@@ -17,10 +17,15 @@ export default function HomeContent({ selfIntroPosts, headlinePosts }) {
   const [isMobile, setIsMobile] = useState(false);
   const modalSlug = searchParams.get("post");
   const openModal = (slug) => {
-    router.replace(`/?post=${encodeURIComponent(slug)}`, { scroll: false });
+    const nextParams = new URLSearchParams(searchParams.toString());
+    nextParams.set("post", slug);
+    router.replace(`/?${nextParams.toString()}`, { scroll: false });
   };
   const closeModal = () => {
-    router.replace(`/`, { scroll: false });
+    const nextParams = new URLSearchParams(searchParams.toString());
+    nextParams.delete("post");
+    const queryString = nextParams.toString();
+    router.replace(queryString ? `/?${queryString}` : `/`, { scroll: false });
   };
 
   const didMount = useRef(false);

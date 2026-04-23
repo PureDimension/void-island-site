@@ -31,11 +31,15 @@ export default function MainSectionPage({ posts, section_name }) {
 	}, [searchParams]);
 
 	function handleSetModalSlug(slug) {
+		const nextParams = new URLSearchParams(searchParams.toString());
 		if (slug) {
-			router.replace(`?post=${encodeURIComponent(slug)}`, { scroll: false });
+			nextParams.set("post", slug);
+			router.replace(`?${nextParams.toString()}`, { scroll: false });
 			setModalSlug(slug);
 		} else {
-			router.replace(`/blog/${section_name}`, { scroll: false });
+			nextParams.delete("post");
+			const queryString = nextParams.toString();
+			router.replace(queryString ? `/blog/${section_name}?${queryString}` : `/blog/${section_name}`, { scroll: false });
 			setModalSlug(null);
 		}
 	}

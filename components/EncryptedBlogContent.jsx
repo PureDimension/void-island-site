@@ -64,6 +64,7 @@ export default function EncryptedBlogContent({
   iv,
   iterations,
   isDarkMode,
+  isMobile = false,
   onUnlock,
 }) {
   const searchParams = useSearchParams();
@@ -72,7 +73,8 @@ export default function EncryptedBlogContent({
   const [isUnlocking, setIsUnlocking] = useState(false);
 
   useEffect(() => {
-    setPassphrase(searchParams.get("key") || "");
+    const keyFromUrl = searchParams.get("key") || "";
+    setPassphrase(keyFromUrl);
     setErrorMessage("");
   }, [searchParams, ciphertext]);
 
@@ -124,9 +126,9 @@ export default function EncryptedBlogContent({
       <p className="mb-4 text-center text-base font-semibold">
         该文件为加密文件，需要输入口令
       </p>
-      <div className="flex items-stretch gap-3">
+      <div className={`flex gap-3 ${isMobile ? "flex-col" : "items-stretch"}`}>
         <input
-          type="password"
+          type="text"
           value={passphrase}
           onChange={(event) => setPassphrase(event.target.value)}
           onKeyDown={(event) => {
@@ -135,7 +137,13 @@ export default function EncryptedBlogContent({
             }
           }}
           placeholder="请输入口令"
-          className={`flex-1 rounded border px-3 py-2 outline-none ${
+          autoComplete="off"
+          autoCapitalize="none"
+          autoCorrect="off"
+          spellCheck={false}
+          inputMode="text"
+          enterKeyHint="done"
+          className={`min-w-0 flex-1 rounded border px-3 py-2 outline-none ${
             isDarkMode
               ? "border-gray-500 bg-black text-white placeholder:text-gray-400"
               : "border-gray-300 bg-white text-black placeholder:text-gray-500"
@@ -145,7 +153,7 @@ export default function EncryptedBlogContent({
           type="button"
           onClick={handleUnlock}
           disabled={isUnlocking}
-          className={`rounded px-4 py-2 font-semibold transition ${
+          className={`rounded px-4 py-2 font-semibold transition ${isMobile ? "w-full" : ""} ${
             isDarkMode
               ? "bg-white text-black hover:bg-gray-200 disabled:bg-gray-500"
               : "bg-black text-white hover:bg-gray-800 disabled:bg-gray-400"
