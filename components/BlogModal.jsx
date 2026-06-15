@@ -6,6 +6,7 @@ import rehypeRaw from "rehype-raw";
 import remarkGfm from "remark-gfm";
 import { useTheme } from "@/lib/theme";
 import EncryptedBlogContent from "@/components/EncryptedBlogContent";
+import styles from "./BlogModal.module.css";
 
 export default function BlogModal({
   title,
@@ -19,6 +20,7 @@ export default function BlogModal({
   salt = null,
   iv = null,
   iterations = null,
+  contentVariant = null,
 }) {
   const modalRef = useRef(null);
   const [loading, setLoading] = useState(false);
@@ -111,78 +113,89 @@ export default function BlogModal({
               onUnlock={setMarkdown}
             />
           ) : (
-            <ReactMarkdown
-              rehypePlugins={[rehypeRaw]}
-              remarkPlugins={[remarkGfm]}
-              components={{
-                h1: ({ children }) => <h1 className="text-2xl font-bold mb-4">{children}</h1>,
-                h2: ({ children }) => <h2 className="text-xl font-semibold mb-3">{children}</h2>,
-                h3: ({ children }) => <h3 className="text-lg font-semibold mb-2">{children}</h3>,
-                h4: ({ children }) => <h4 className="text-base font-semibold mb-1.5">{children}</h4>,
-                h5: ({ children }) => <h5 className="text-sm font-semibold mb-1">{children}</h5>,
-                h6: ({ children }) => (
-                  <h6 className="text-xs font-semibold mb-1 text-gray-600 uppercase tracking-wider">
-                    {children}
-                  </h6>
-                ),
-                p: ({ children }) => <p className="mb-3 leading-relaxed">{children}</p>,
-                ul: ({ children }) => <ul className="list-disc ml-5 mb-3">{children}</ul>,
-                ol: ({ children }) => <ol className="list-decimal ml-5 mb-3">{children}</ol>,
-                li: ({ children }) => <li className="mb-1">{children}</li>,
-                code: ({ children, className }) => {
-                  const isInline = !className;
-                  return isInline ? (
-                    <code className="bg-gray-100 text-black px-1 py-0.5 rounded text-sm font-mono">
-                      {children}
-                    </code>
-                  ) : (
-                    <code className={className}>{children}</code>
-                  );
-                },
-                pre: ({ children }) => (
-                  <pre className="bg-gray-900 text-white p-4 rounded overflow-x-auto mb-4">
-                    {children}
-                  </pre>
-                ),
-                blockquote: ({ children }) => (
-                  <blockquote
-                    className={`border-l-4 border-gray-400 pl-4 italic ${
-                      isDarkMode ? "text-gray-300" : "text-gray-700"
-                    } mb-3`}
-                  >
-                    {children}
-                  </blockquote>
-                ),
-                a: ({ href, children, ...props }) => (
-                  <a
-                    {...props}
-                    href={href}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className={props.className ? props.className : "text-blue-600 underline"}
-                  >
-                    {children}
-                  </a>
-                ),
-                font: ({ color, children }) => <span style={{ color }}>{children}</span>,
-                table: ({ children }) => (
-                  <table className="table-auto border-collapse border border-gray-400 w-full mb-4">
-                    {children}
-                  </table>
-                ),
-                thead: ({ children }) => <thead className="bg-gray-200">{children}</thead>,
-                tbody: ({ children }) => <tbody>{children}</tbody>,
-                tr: ({ children }) => <tr className="border-b border-gray-300">{children}</tr>,
-                th: ({ children }) => (
-                  <th className="px-4 py-2 border border-gray-400 text-left font-semibold">
-                    {children}
-                  </th>
-                ),
-                td: ({ children }) => <td className="px-4 py-2 border border-gray-400">{children}</td>,
-              }}
+            <div
+              className={[
+                styles.markdownBody,
+                contentVariant && styles[contentVariant] ? styles[contentVariant] : "",
+              ]
+                .filter(Boolean)
+                .join(" ")}
             >
-              {markdown}
-            </ReactMarkdown>
+              <ReactMarkdown
+                rehypePlugins={[rehypeRaw]}
+                remarkPlugins={[remarkGfm]}
+                components={{
+                  h1: ({ children }) => <h1 className="text-2xl font-bold mb-4">{children}</h1>,
+                  h2: ({ children }) => <h2 className="text-xl font-semibold mb-3">{children}</h2>,
+                  h3: ({ children }) => <h3 className="text-lg font-semibold mb-2">{children}</h3>,
+                  h4: ({ children }) => <h4 className="text-base font-semibold mb-1.5">{children}</h4>,
+                  h5: ({ children }) => <h5 className="text-sm font-semibold mb-1">{children}</h5>,
+                  h6: ({ children }) => (
+                    <h6 className="text-xs font-semibold mb-1 text-gray-600 uppercase tracking-wider">
+                      {children}
+                    </h6>
+                  ),
+                  p: ({ children }) => <p className="mb-3 leading-relaxed">{children}</p>,
+                  ul: ({ children }) => <ul className="list-disc ml-5 mb-3">{children}</ul>,
+                  ol: ({ children }) => <ol className="list-decimal ml-5 mb-3">{children}</ol>,
+                  li: ({ children }) => <li className="mb-1">{children}</li>,
+                  code: ({ children, className }) => {
+                    const isInline = !className;
+                    return isInline ? (
+                      <code className="bg-gray-100 text-black px-1 py-0.5 rounded text-sm font-mono">
+                        {children}
+                      </code>
+                    ) : (
+                      <code className={className}>{children}</code>
+                    );
+                  },
+                  pre: ({ children }) => (
+                    <pre className="bg-gray-900 text-white p-4 rounded overflow-x-auto mb-4">
+                      {children}
+                    </pre>
+                  ),
+                  blockquote: ({ children }) => (
+                    <blockquote
+                      className={`border-l-4 border-gray-400 pl-4 italic ${
+                        isDarkMode ? "text-gray-300" : "text-gray-700"
+                      } mb-3`}
+                    >
+                      {children}
+                    </blockquote>
+                  ),
+                  a: ({ href, children, ...props }) => (
+                    <a
+                      {...props}
+                      href={href}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className={props.className ? props.className : "text-blue-600 underline"}
+                    >
+                      {children}
+                    </a>
+                  ),
+                  font: ({ color, children }) => <span style={{ color }}>{children}</span>,
+                  table: ({ children }) => (
+                    <table className="table-auto border-collapse border border-gray-400 w-full mb-4">
+                      {children}
+                    </table>
+                  ),
+                  thead: ({ children }) => <thead className="bg-gray-200">{children}</thead>,
+                  tbody: ({ children }) => <tbody>{children}</tbody>,
+                  tr: ({ children }) => <tr className="border-b border-gray-300">{children}</tr>,
+                  th: ({ children }) => (
+                    <th className="px-4 py-2 border border-gray-400 text-left font-semibold">
+                      {children}
+                    </th>
+                  ),
+                  td: ({ children }) => (
+                    <td className="px-4 py-2 border border-gray-400">{children}</td>
+                  ),
+                }}
+              >
+                {markdown}
+              </ReactMarkdown>
+            </div>
           )}
         </div>
       </div>

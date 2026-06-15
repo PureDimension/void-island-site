@@ -5,6 +5,7 @@ export default function SelfIntroduction({
   isMobile,
   sectionsConfig,
   openModal,
+  friendLinkCount = 0,
 }) {
   return (
     <div
@@ -203,7 +204,7 @@ export default function SelfIntroduction({
               "4px 4px 10px rgba(0,0,0,0.4), -2px -2px 6px rgba(255,255,255,0.2)";
           }}
         >
-          🌐 友情链接(已有7人！)
+          🌐 友情链接{friendLinkCount > 0 ? `(已有${friendLinkCount}人！)` : ""}
         </div>
       </div>
     </div>

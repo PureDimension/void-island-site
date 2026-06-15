@@ -9,13 +9,13 @@ import os
 
 app = Flask(__name__)
 
-# ---------------- 配置 ----------------
-DEPLOY_SCRIPT = "/var/www/void-island-site/deploy.sh"
-GITHUB_SECRET = b"A7xlup88ZqkvlR"  # GitHub Webhook 配置的 Secret，bytes 类型
-# -------------------------------------
+DEPLOY_SCRIPT = os.environ.get("VOID_ISLAND_DEPLOY_SCRIPT", "/usr/local/bin/void-island-deploy")
+GITHUB_SECRET = os.environ.get("GITHUB_WEBHOOK_SECRET", "").encode("utf-8")
 
 def verify_signature(payload, signature):
     """验证 GitHub Webhook HMAC-SHA256 签名"""
+    if not GITHUB_SECRET:
+        return False
     mac = hmac.new(GITHUB_SECRET, payload, hashlib.sha256)
     expected = "sha256=" + mac.hexdigest()
     return hmac.compare_digest(expected, signature)
@@ -33,8 +33,11 @@ def github_webhook():
         return "Ignored", 200
 
     try:
+        if not os.path.isfile(DEPLOY_SCRIPT):
+            print(f"[ERROR] Deploy script not found: {DEPLOY_SCRIPT}")
+            return "Deploy script not found", 500
+
         print("[INFO] GitHub push received. Starting deploy...")
-        # 使用 Popen 非阻塞执行 deploy.sh
         subprocess.Popen(["bash", DEPLOY_SCRIPT])
         return "OK", 200
     except Exception as e:

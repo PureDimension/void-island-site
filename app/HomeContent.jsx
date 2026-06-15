@@ -71,6 +71,10 @@ export default function HomeContent({ selfIntroPosts, headlinePosts }) {
   }, [filterOn]);
 
   const selectedPost = selfIntroPosts.find((p) => p.slug === modalSlug);
+  const friendLinksPost = selfIntroPosts.find((p) => p.slug === "FriendLinks");
+  const friendLinkCount = friendLinksPost?.content
+    ? (friendLinksPost.content.match(/class="friend-link-anchor"/g) || []).length
+    : 0;
 
   return (
     <div className="min-h-screen relative overflow-hidden text-white">
@@ -117,6 +121,7 @@ export default function HomeContent({ selfIntroPosts, headlinePosts }) {
             onClose={closeModal}
             isMobile={isMobile}
             forceTheme={filterOn}
+            contentVariant={selectedPost.slug === "FriendLinks" ? "friendLinksScope" : null}
           />
         )}
         <TopRightButton isMobile={isMobile} />
@@ -125,6 +130,7 @@ export default function HomeContent({ selfIntroPosts, headlinePosts }) {
           isMobile={isMobile}
           sectionsConfig={sectionsConfig}
           openModal={openModal}
+          friendLinkCount={friendLinkCount}
         />
 
         <div
