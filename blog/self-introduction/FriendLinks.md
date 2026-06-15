@@ -72,4 +72,14 @@ title: 友情链接
       </div>
     </div>
   </a>
+
+  <a class="friend-link-anchor" href="https://xjrhoshi.github.io/" target="_blank" rel="noopener noreferrer">
+    <div class="friend-link-card" style="--friend-card-bg: #ddd9f0;">
+      <img class="friend-link-avatar" src="/friendLinkAvatar/HoshikanUru.jpg" alt="HoshikanUru avatar" />
+      <div class="friend-link-body">
+        <div class="friend-link-title">可爱的润酱！</div>
+        <div class="friend-link-domain">xjrhoshi.github.io</div>
+      </div>
+    </div>
+  </a>
 </div>
