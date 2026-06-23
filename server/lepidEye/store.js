@@ -104,6 +104,58 @@ function getNowDateOnly() {
   return formatDateOnly(getBeijingDate());
 }
 
+function normalizePlanNodes(nodes) {
+  if (!Array.isArray(nodes)) return [];
+
+  return nodes
+    .map((node, index) => ({
+      title: String(node?.title ?? "").trim(),
+      node_date: String(node?.node_date ?? "").trim(),
+      progress_value: Number(node?.progress_value ?? 0),
+      importance_delta: Number(node?.importance_delta ?? 0),
+      note: String(node?.note ?? "").trim(),
+      sort_order: Number(node?.sort_order ?? index)
+    }))
+    .filter((node) => node.title && node.node_date)
+    .map((node, index) => ({
+      ...node,
+      progress_value: Number.isFinite(node.progress_value) ? Math.min(100, Math.max(0, Math.round(node.progress_value))) : 0,
+      importance_delta: Number.isFinite(node.importance_delta) ? Math.min(5, Math.max(-5, Math.round(node.importance_delta))) : 0,
+      sort_order: index
+    }));
+}
+
+function syncPlanNodes(planId, nodes) {
+  const normalizedNodes = normalizePlanNodes(nodes);
+  db.prepare("DELETE FROM lepid_eye_plan_nodes WHERE plan_id = ?").run(planId);
+
+  if (!normalizedNodes.length) return;
+
+  const insertNode = db.prepare(`
+    INSERT INTO lepid_eye_plan_nodes (
+      plan_id,
+      title,
+      node_date,
+      progress_value,
+      importance_delta,
+      note,
+      sort_order
+    ) VALUES (?, ?, ?, ?, ?, ?, ?)
+  `);
+
+  normalizedNodes.forEach((node) => {
+    insertNode.run(
+      planId,
+      node.title,
+      node.node_date,
+      node.progress_value,
+      node.importance_delta,
+      node.note,
+      node.sort_order
+    );
+  });
+}
+
 function hashAccessToken(token) {
   return crypto.createHash("sha256").update(token).digest("hex");
 }
@@ -181,17 +233,15 @@ function initLepidEyeDatabase() {
       updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
     );
 
-    CREATE TABLE IF NOT EXISTS lepid_eye_plan_logs (
+    CREATE TABLE IF NOT EXISTS lepid_eye_plan_nodes (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       plan_id INTEGER NOT NULL,
-      log_date TEXT NOT NULL,
-      action_type TEXT NOT NULL,
-      from_status TEXT,
-      to_status TEXT,
-      from_progress INTEGER,
-      to_progress INTEGER,
-      message TEXT DEFAULT '',
-      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      title TEXT NOT NULL,
+      node_date TEXT NOT NULL,
+      progress_value INTEGER NOT NULL DEFAULT 0,
+      importance_delta INTEGER NOT NULL DEFAULT 0,
+      note TEXT DEFAULT '',
+      sort_order INTEGER NOT NULL DEFAULT 0,
       FOREIGN KEY(plan_id) REFERENCES lepid_eye_plans(id)
     );
 
@@ -203,6 +253,8 @@ function initLepidEyeDatabase() {
       note TEXT DEFAULT ''
     );
   `);
+
+  db.exec("DROP TABLE IF EXISTS lepid_eye_plan_logs");
 
   ensureColumn("lepid_eye_events", "color", "TEXT DEFAULT ''");
   ensureColumn("lepid_eye_plans", "color", "TEXT DEFAULT ''");
@@ -293,19 +345,6 @@ function initLepidEyeDatabase() {
     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `);
 
-  const insertPlanLog = db.prepare(`
-    INSERT INTO lepid_eye_plan_logs (
-      plan_id,
-      log_date,
-      action_type,
-      from_status,
-      to_status,
-      from_progress,
-      to_progress,
-      message
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-  `);
-
   const tx = db.transaction(() => {
     events.forEach((event) => {
       insertEvent.run(
@@ -324,7 +363,7 @@ function initLepidEyeDatabase() {
     });
 
     plans.forEach((plan) => {
-      const info = insertPlan.run(
+      insertPlan.run(
         plan.major_category,
         plan.minor_category,
         plan.task_name,
@@ -336,17 +375,6 @@ function initLepidEyeDatabase() {
         plan.permission_level,
         plan.color,
         plan.note
-      );
-
-      insertPlanLog.run(
-        info.lastInsertRowid,
-        plan.start_date,
-        "create",
-        null,
-        plan.status,
-        null,
-        plan.progress,
-        `${plan.task_name} 已创建`
       );
     });
   });
@@ -658,7 +686,7 @@ function getLepidEyeBootstrap({ accessLevel = "low" }) {
 
   const events = db.prepare("SELECT * FROM lepid_eye_events ORDER BY start_at ASC").all();
   const plans = db.prepare("SELECT * FROM lepid_eye_plans ORDER BY start_date ASC").all();
-  const planLogs = db.prepare("SELECT * FROM lepid_eye_plan_logs ORDER BY log_date ASC, id ASC").all();
+  const planNodes = db.prepare("SELECT * FROM lepid_eye_plan_nodes ORDER BY plan_id ASC, sort_order ASC, node_date ASC, id ASC").all();
 
   const statsEvents = events.map((event) => sanitizeEventForStats(event, accessLevel)).filter(Boolean);
   const statsPlans = plans.map((plan) => sanitizePlanForStats(plan, accessLevel)).filter(Boolean);
@@ -667,7 +695,7 @@ function getLepidEyeBootstrap({ accessLevel = "low" }) {
     accessLevel,
     events,
     plans,
-    planLogs,
+    planNodes,
     stats: buildStats(statsEvents, statsPlans),
     aiStatus: "暂未上线"
   };
@@ -730,19 +758,6 @@ function addLepidEyeRecord({ entity, payload }) {
       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
 
-    const insertPlanLog = db.prepare(`
-      INSERT INTO lepid_eye_plan_logs (
-        plan_id,
-        log_date,
-        action_type,
-        from_status,
-        to_status,
-        from_progress,
-        to_progress,
-        message
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-    `);
-
     const tx = db.transaction(() => {
       const result = insertPlan.run(
         payload.major_category,
@@ -759,29 +774,7 @@ function addLepidEyeRecord({ entity, payload }) {
       );
 
       const planId = Number(result.lastInsertRowid);
-      insertPlanLog.run(
-        planId,
-        payload.start_date,
-        "create",
-        null,
-        payload.status,
-        null,
-        Number(payload.progress ?? 0),
-        `${payload.task_name} 已创建`
-      );
-
-      if (payload.status === "done") {
-        insertPlanLog.run(
-          planId,
-          completedAt,
-          "complete",
-          null,
-          "done",
-          null,
-          Number(payload.progress ?? 100),
-          `${payload.task_name} 已完成`
-        );
-      }
+      syncPlanNodes(planId, payload.nodes ?? []);
 
       return { entity, id: planId };
     });
@@ -803,7 +796,7 @@ function mutateLepidEyeRecord({ entity, action, id, payload }) {
 
     if (entity === "plan") {
       const tx = db.transaction(() => {
-        db.prepare("DELETE FROM lepid_eye_plan_logs WHERE plan_id = ?").run(id);
+        db.prepare("DELETE FROM lepid_eye_plan_nodes WHERE plan_id = ?").run(id);
         db.prepare("DELETE FROM lepid_eye_plans WHERE id = ?").run(id);
       });
       tx();
@@ -873,20 +866,7 @@ function mutateLepidEyeRecord({ entity, action, id, payload }) {
           id
         );
 
-        db.prepare(`
-          INSERT INTO lepid_eye_plan_logs (
-            plan_id, log_date, action_type, from_status, to_status, from_progress, to_progress, message
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-        `).run(
-          id,
-          nextStatus === "done" ? completedAt : getNowDateOnly(),
-          nextStatus === "done" && current.status !== "done" ? "complete" : "update",
-          current.status,
-          nextStatus,
-          current.progress,
-          nextProgress,
-          `${payload.task_name ?? current.task_name} 已更新`
-        );
+        syncPlanNodes(id, payload.nodes ?? []);
       });
 
       tx();

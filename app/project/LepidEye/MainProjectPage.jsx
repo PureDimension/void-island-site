@@ -44,6 +44,40 @@ const PERMISSION_LEVEL_OPTIONS = [
   { value: "2", label: "2 级 / 小类隐藏" },
   { value: "3", label: "3 级 / 大类隐藏" }
 ];
+const PLAN_NODE_IMPORTANCE_OPTIONS = [
+  { value: "-2", label: "明显降低" },
+  { value: "-1", label: "轻微降低" },
+  { value: "0", label: "保持不变" },
+  { value: "1", label: "轻微提升" },
+  { value: "2", label: "明显提升" }
+];
+
+function createPlanNodeDraft(overrides = {}) {
+  return {
+    clientId: overrides.clientId ?? `node-${Math.random().toString(36).slice(2, 10)}`,
+    id: overrides.id ?? null,
+    title: overrides.title ?? "",
+    nodeDate: overrides.nodeDate ?? "",
+    progressValue: overrides.progressValue ?? "0",
+    importanceDelta: overrides.importanceDelta ?? "0",
+    note: overrides.note ?? ""
+  };
+}
+
+function normalizePlanNodeDrafts(nodes) {
+  if (!Array.isArray(nodes)) return [];
+  return nodes.map((node) =>
+    createPlanNodeDraft({
+      clientId: node.clientId,
+      id: node.id ?? null,
+      title: node.title ?? "",
+      nodeDate: node.nodeDate ?? node.node_date ?? "",
+      progressValue: String(node.progressValue ?? node.progress_value ?? "0"),
+      importanceDelta: String(node.importanceDelta ?? node.importance_delta ?? "0"),
+      note: node.note ?? ""
+    })
+  );
+}
 
 function maskMinor(major) {
   return `${major} / ??`;
@@ -93,6 +127,16 @@ function parseLocalDate(value) {
 
 function startOfLocalDay(date) {
   return new Date(date.getFullYear(), date.getMonth(), date.getDate(), 0, 0, 0, 0);
+}
+
+function endOfLocalDay(date) {
+  return new Date(date.getFullYear(), date.getMonth(), date.getDate(), 24, 0, 0, 0);
+}
+
+function getMinuteInDay(date, treatMidnightAsDayEnd = false) {
+  const minute = date.getHours() * 60 + date.getMinutes();
+  if (treatMidnightAsDayEnd && minute === 0) return 24 * 60;
+  return minute;
 }
 
 function diffInDays(fromDate, toDate) {
@@ -516,43 +560,45 @@ function expandTimelineEvents(events, rangeStart, rangeEnd, timelinePastOffset) 
       const occurrenceEnd = new Date(occurrenceStart.getTime() + durationMs);
       if (occurrenceEnd < rangeStart || occurrenceStart > rangeEnd) return;
 
-      const dayStart = new Date(
-        occurrenceStart.getFullYear(),
-        occurrenceStart.getMonth(),
-        occurrenceStart.getDate(),
-        0,
-        0,
-        0,
-        0
-      );
-      const diffDays = Math.round((dayStart.getTime() - rangeStart.getTime()) / 86400000);
+      let sliceStart = new Date(occurrenceStart);
 
-      occurrences.push({
-        id: `${event.id}-${occurrenceStart.toISOString()}`,
-        sourceId: event.id,
-        dayIndex: diffDays,
-        start: occurrenceStart.getHours(),
-        end: Math.max(occurrenceStart.getHours() + 1, occurrenceEnd.getHours()),
-        startMinuteInDay: occurrenceStart.getHours() * 60 + occurrenceStart.getMinutes(),
-        endMinuteInDay: Math.max(
-          occurrenceStart.getHours() * 60 + occurrenceStart.getMinutes() + 1,
-          occurrenceEnd.getHours() * 60 + occurrenceEnd.getMinutes()
-        ),
-        tone: mapEventTone(event.nature),
-        label: event.displayTaskName,
-        note: event.displayNote,
-        category: `${event.displayMajor} · ${event.displayMinor}`,
-        majorCategory: event.displayMajor,
-        minorCategory: event.displayMinor,
-        color: event.color,
-        isRepeating: event.repeat_type !== "none",
-        repeatType: event.repeat_type,
-        repeatUntil: event.repeat_until,
-        showDailyLabel: event.repeat_type === "daily" && diffDays === dailyLabelDayIndex,
-        nature: event.nature,
-        originalStart: event.start_at,
-        originalEnd: event.end_at
-      });
+      while (sliceStart < occurrenceEnd) {
+        const sliceDayStart = startOfLocalDay(sliceStart);
+        const sliceDayEnd = endOfLocalDay(sliceStart);
+        const sliceEnd = new Date(Math.min(occurrenceEnd.getTime(), sliceDayEnd.getTime()));
+        const diffDays = Math.round((sliceDayStart.getTime() - rangeStart.getTime()) / 86400000);
+        const startMinuteInDay = getMinuteInDay(sliceStart);
+        const endMinuteInDay = Math.max(
+          startMinuteInDay + 1,
+          getMinuteInDay(sliceEnd, sliceEnd.getTime() === sliceDayEnd.getTime())
+        );
+
+        occurrences.push({
+          id: `${event.id}-${occurrenceStart.toISOString()}-${diffDays}`,
+          sourceId: event.id,
+          dayIndex: diffDays,
+          start: sliceStart.getHours(),
+          end: Math.max(sliceStart.getHours() + 1, sliceEnd.getHours()),
+          startMinuteInDay,
+          endMinuteInDay,
+          tone: mapEventTone(event.nature),
+          label: event.displayTaskName,
+          note: event.displayNote,
+          category: `${event.displayMajor} · ${event.displayMinor}`,
+          majorCategory: event.displayMajor,
+          minorCategory: event.displayMinor,
+          color: event.color,
+          isRepeating: event.repeat_type !== "none",
+          repeatType: event.repeat_type,
+          repeatUntil: event.repeat_until,
+          showDailyLabel: event.repeat_type === "daily" && diffDays === dailyLabelDayIndex,
+          nature: event.nature,
+          originalStart: event.start_at,
+          originalEnd: event.end_at
+        });
+
+        sliceStart = sliceEnd;
+      }
     };
 
     if (event.repeat_type === "none") {
@@ -849,7 +895,8 @@ export default function MainProjectPage({ projects, bootstrap, editorKey, viewer
     completedAt: "",
     permissionLevel: "0",
     color: "#badeff",
-    note: ""
+    note: "",
+    nodes: []
   }));
 
   useEffect(() => {
@@ -1138,6 +1185,15 @@ export default function MainProjectPage({ projects, bootstrap, editorKey, viewer
     () => bootstrap.plans.map((plan) => sanitizePlanForMode(plan, accessLevel)).filter(Boolean),
     [accessLevel, bootstrap.plans]
   );
+  const planNodesByPlanId = useMemo(() => {
+    const grouped = new Map();
+    (bootstrap.planNodes ?? []).forEach((node) => {
+      const current = grouped.get(node.plan_id) ?? [];
+      current.push(node);
+      grouped.set(node.plan_id, current);
+    });
+    return grouped;
+  }, [bootstrap.planNodes]);
 
   const eventCategoryCatalog = useMemo(() => collectCategoryOptions(bootstrap.events), [bootstrap.events]);
   const planCategoryCatalog = useMemo(() => collectCategoryOptions(bootstrap.plans), [bootstrap.plans]);
@@ -1153,9 +1209,10 @@ export default function MainProjectPage({ projects, bootstrap, editorKey, viewer
     () =>
       bootstrap.plans.map((plan) => ({
         ...plan,
+        nodes: planNodesByPlanId.get(plan.id) ?? [],
         anchorTime: getPlanAnchorTime(plan)
       })),
-    [bootstrap.plans]
+    [bootstrap.plans, planNodesByPlanId]
   );
 
   const eventCategoryOptions = useMemo(
@@ -1318,7 +1375,8 @@ export default function MainProjectPage({ projects, bootstrap, editorKey, viewer
       completedAt: "",
       permissionLevel: "0",
       color: "#badeff",
-      note: ""
+      note: "",
+      nodes: []
     };
   }
 
@@ -1368,6 +1426,7 @@ export default function MainProjectPage({ projects, bootstrap, editorKey, viewer
       permissionLevel: String(plan.permission_level ?? 0),
       color: rgbStringToHex(plan.color),
       note: plan.note ?? "",
+      nodes: normalizePlanNodeDrafts(plan.nodes ?? []),
       id: plan.id
     };
   }
@@ -1477,6 +1536,65 @@ export default function MainProjectPage({ projects, bootstrap, editorKey, viewer
     }));
   }
 
+  function updatePlanNodeDraft(clientId, patch) {
+    setPlanDraft((current) => ({
+      ...current,
+      nodes: current.nodes.map((node) => (node.clientId === clientId ? { ...node, ...patch } : node))
+    }));
+  }
+
+  function addPlanNodeDraft() {
+    setPlanDraft((current) => ({
+      ...current,
+      nodes: [
+        ...current.nodes,
+        createPlanNodeDraft({
+          nodeDate: current.startDate || defaultPlanDate,
+          progressValue: current.progress || "0",
+          importanceDelta: "0"
+        })
+      ]
+    }));
+  }
+
+  function removePlanNodeDraft(clientId) {
+    setPlanDraft((current) => ({
+      ...current,
+      nodes: current.nodes.filter((node) => node.clientId !== clientId)
+    }));
+  }
+
+  function serializePlanNodes(nodes) {
+    return normalizePlanNodeDrafts(nodes).map((node, index) => ({
+      title: node.title.trim(),
+      node_date: node.nodeDate,
+      progress_value: Number(node.progressValue),
+      importance_delta: Number(node.importanceDelta),
+      note: node.note.trim(),
+      sort_order: index
+    }));
+  }
+
+  function validatePlanNodes(nodes) {
+    for (const node of normalizePlanNodeDrafts(nodes)) {
+      if (!node.title.trim()) {
+        return "每个计划节点都需要填写节点名称。";
+      }
+      if (!node.nodeDate) {
+        return "每个计划节点都需要填写节点日期。";
+      }
+      const progressValue = Number(node.progressValue);
+      if (Number.isNaN(progressValue) || progressValue < 0 || progressValue > 100) {
+        return "计划节点的进度值需要是 0 到 100 之间的数字。";
+      }
+      const importanceDelta = Number(node.importanceDelta);
+      if (Number.isNaN(importanceDelta) || importanceDelta < -5 || importanceDelta > 5) {
+        return "计划节点的重要度变化需要在 -5 到 5 之间。";
+      }
+    }
+    return "";
+  }
+
   async function submitEventDraft() {
     const majorCategory = getDraftMajorValue(eventDraft);
     const minorCategory = getDraftMinorValue(eventDraft);
@@ -1546,6 +1664,11 @@ export default function MainProjectPage({ projects, bootstrap, editorKey, viewer
       setDialogError("已完成计划需要填写完成日期。");
       return;
     }
+    const nodeError = validatePlanNodes(planDraft.nodes);
+    if (nodeError) {
+      setDialogError(nodeError);
+      return;
+    }
 
     setDialogError("");
     await postEditorAction("/api/lepid-eye/add", {
@@ -1561,7 +1684,8 @@ export default function MainProjectPage({ projects, bootstrap, editorKey, viewer
         completed_at: planDraft.status === "done" ? planDraft.completedAt || null : null,
         permission_level: Number(planDraft.permissionLevel),
         color: hexToRgbString(planDraft.color),
-        note: planDraft.note.trim()
+        note: planDraft.note.trim(),
+        nodes: serializePlanNodes(planDraft.nodes)
       }
     });
   }
@@ -1635,6 +1759,11 @@ export default function MainProjectPage({ projects, bootstrap, editorKey, viewer
       setDialogError("已完成计划需要填写完成日期。");
       return;
     }
+    const nodeError = validatePlanNodes(planDraft.nodes);
+    if (nodeError) {
+      setDialogError(nodeError);
+      return;
+    }
 
     setDialogError("");
     await postEditorAction("/api/lepid-eye/mutate", {
@@ -1652,7 +1781,8 @@ export default function MainProjectPage({ projects, bootstrap, editorKey, viewer
         completed_at: planDraft.status === "done" ? planDraft.completedAt || null : null,
         permission_level: Number(planDraft.permissionLevel),
         color: hexToRgbString(planDraft.color),
-        note: planDraft.note.trim()
+        note: planDraft.note.trim(),
+        nodes: serializePlanNodes(planDraft.nodes)
       }
     });
   }
@@ -2113,17 +2243,10 @@ export default function MainProjectPage({ projects, bootstrap, editorKey, viewer
                   const startDate = parseLocalDate(plan.start_date);
                   const expectedDueDate = plan.expected_due_date ? parseLocalDate(plan.expected_due_date) : null;
                   const completedAt = plan.completed_at ? parseLocalDate(plan.completed_at) : null;
-                  const planLogs = bootstrap.planLogs.filter((log) => log.plan_id === plan.id);
-                  const completedLog = [...planLogs]
-                    .reverse()
-                    .find((log) => log.action_type === "complete" || (log.to_status === "done" && log.action_type !== "create"));
-                  const completedDate = completedLog ? parseLocalDate(completedLog.log_date) : null;
-                  const latestLog = planLogs.at(-1);
-                  const latestLogDate = latestLog ? parseLocalDate(latestLog.log_date) : null;
                   const today = new Date(beijingNow.year, beijingNow.month - 1, beijingNow.day);
                   const isRunningState = plan.status === "primary" || plan.status === "active" || plan.status === "inactive";
                   const effectiveStartDate = startDate > today ? today : startDate;
-                  const displayEndDate = isRunningState ? today : completedAt ?? completedDate ?? expectedDueDate ?? latestLogDate ?? startDate;
+                  const displayEndDate = isRunningState ? today : completedAt ?? expectedDueDate ?? startDate;
                   const dueIndex = expectedDueDate ? findPlanAxisIndex(expectedDueDate, planAxis) : null;
                   const startCenter = getPlanAxisPosition(effectiveStartDate, planAxis, planUnitWidth);
                   const endCenter = getPlanAxisPosition(displayEndDate, planAxis, planUnitWidth);
@@ -2140,7 +2263,7 @@ export default function MainProjectPage({ projects, bootstrap, editorKey, viewer
                       `进度：${clampProgress(plan.progress)}%`,
                       `起始：${plan.start_date}`,
                       `截止：${plan.expected_due_date ?? "未设置"}`,
-                      `完成：${plan.status === "done" ? plan.completed_at ?? completedLog?.log_date ?? "未记录" : "未完成"}`,
+                      `完成：${plan.status === "done" ? plan.completed_at ?? "未记录" : "未完成"}`,
                       plan.displayNote || "无备注"
                     ],
                     editTarget: isCreator ? { entity: "plan", id: plan.id } : null
@@ -2918,6 +3041,95 @@ export default function MainProjectPage({ projects, bootstrap, editorKey, viewer
                     placeholder="鼠标悬浮时展示的说明信息"
                   />
                 </label>
+
+                <section className="plan-node-section">
+                  <div className="plan-node-section-head">
+                    <div>
+                      <strong>计划节点</strong>
+                      <p>节点只记录阶段名称、进度值和重要度变化，用于补充计划内部里程碑。</p>
+                    </div>
+                    <button type="button" className="plan-node-add-btn" onClick={addPlanNodeDraft}>
+                      新增节点
+                    </button>
+                  </div>
+
+                  {planDraft.nodes.length ? (
+                    <div className="plan-node-list">
+                      {planDraft.nodes.map((node, index) => (
+                        <div key={node.clientId} className="plan-node-card">
+                          <div className="plan-node-card-head">
+                            <strong>节点 {index + 1}</strong>
+                            <button
+                              type="button"
+                              className="plan-node-remove-btn"
+                              onClick={() => removePlanNodeDraft(node.clientId)}
+                            >
+                              删除节点
+                            </button>
+                          </div>
+
+                          <div className="plan-node-grid">
+                            <label className="dialog-field wide">
+                              <span>节点名称</span>
+                              <input
+                                type="text"
+                                value={node.title}
+                                onChange={(event) => updatePlanNodeDraft(node.clientId, { title: event.target.value })}
+                                placeholder="例如：完成结构拆分 / 提交第一版"
+                              />
+                            </label>
+
+                            <label className="dialog-field">
+                              <span>节点日期</span>
+                              <input
+                                type="date"
+                                value={node.nodeDate}
+                                onChange={(event) => updatePlanNodeDraft(node.clientId, { nodeDate: event.target.value })}
+                              />
+                            </label>
+
+                            <label className="dialog-field">
+                              <span>节点进度</span>
+                              <input
+                                type="number"
+                                min="0"
+                                max="100"
+                                value={node.progressValue}
+                                onChange={(event) => updatePlanNodeDraft(node.clientId, { progressValue: event.target.value })}
+                              />
+                            </label>
+
+                            <label className="dialog-field">
+                              <span>重要度变化</span>
+                              <select
+                                value={node.importanceDelta}
+                                onChange={(event) => updatePlanNodeDraft(node.clientId, { importanceDelta: event.target.value })}
+                              >
+                                {PLAN_NODE_IMPORTANCE_OPTIONS.map((option) => (
+                                  <option key={option.value} value={option.value}>
+                                    {option.label}
+                                  </option>
+                                ))}
+                              </select>
+                            </label>
+
+                            <label className="dialog-field wide">
+                              <span>节点备注</span>
+                              <textarea
+                                rows={3}
+                                value={node.note}
+                                onChange={(event) => updatePlanNodeDraft(node.clientId, { note: event.target.value })}
+                                placeholder="记录这个节点对应的说明"
+                              />
+                            </label>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="plan-node-empty">当前还没有节点，可以在这里补充阶段里程碑。</div>
+                  )}
+                </section>
               </div>
             ) : null}
 
@@ -3887,12 +4099,18 @@ export default function MainProjectPage({ projects, bootstrap, editorKey, viewer
 
         .plan-label strong {
           font-size: 0.9rem;
+          line-height: 1.35;
+          white-space: normal;
+          overflow-wrap: anywhere;
         }
 
         .plan-label span {
           font-size: 0.74rem;
           color: var(--muted);
           margin-top: 4px;
+          line-height: 1.45;
+          white-space: normal;
+          overflow-wrap: anywhere;
         }
 
         .plan-track {
@@ -4433,6 +4651,97 @@ export default function MainProjectPage({ projects, bootstrap, editorKey, viewer
           color: var(--text);
         }
 
+        .plan-node-section {
+          grid-column: 1 / -1;
+          display: grid;
+          gap: 14px;
+          padding-top: 8px;
+          border-top: 1px solid var(--line);
+        }
+
+        .plan-node-section-head {
+          display: flex;
+          justify-content: space-between;
+          align-items: flex-start;
+          gap: 14px;
+        }
+
+        .plan-node-section-head strong {
+          display: block;
+          font-size: 14px;
+          letter-spacing: 0.04em;
+        }
+
+        .plan-node-section-head p {
+          margin: 4px 0 0;
+          color: var(--muted);
+          font-size: 12px;
+          line-height: 1.6;
+        }
+
+        .plan-node-add-btn,
+        .plan-node-remove-btn {
+          border: 1px solid rgba(186, 222, 255, 0.18);
+          background: rgba(186, 222, 255, 0.08);
+          color: var(--text);
+          border-radius: 999px;
+          padding: 8px 14px;
+          font: inherit;
+          font-size: 12px;
+          font-weight: 700;
+          letter-spacing: 0.06em;
+          cursor: pointer;
+          transition: transform 0.18s ease, filter 0.18s ease, background 0.18s ease;
+        }
+
+        .plan-node-remove-btn {
+          background: rgba(255, 122, 122, 0.08);
+          border-color: rgba(255, 122, 122, 0.18);
+        }
+
+        .plan-node-add-btn:hover,
+        .plan-node-remove-btn:hover {
+          transform: translateY(-1px);
+          filter: brightness(1.04);
+        }
+
+        .plan-node-list {
+          display: grid;
+          gap: 12px;
+        }
+
+        .plan-node-card {
+          display: grid;
+          gap: 12px;
+          padding: 14px;
+          border-radius: 18px;
+          background: rgba(255, 255, 255, 0.05);
+          border: 1px solid rgba(255, 255, 255, 0.08);
+        }
+
+        .plan-node-card-head {
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+          gap: 10px;
+        }
+
+        .plan-node-grid {
+          display: grid;
+          grid-template-columns: repeat(3, minmax(0, 1fr));
+          gap: 12px;
+        }
+
+        .plan-node-empty {
+          padding: 14px 16px;
+          border-radius: 18px;
+          background: rgba(255, 255, 255, 0.05);
+          border: 1px dashed rgba(255, 255, 255, 0.12);
+          color: var(--muted);
+          font-size: 12px;
+          line-height: 1.6;
+        }
+
         .dialog-error {
           margin-top: 14px;
           padding: 11px 14px;
@@ -4499,6 +4808,12 @@ export default function MainProjectPage({ projects, bootstrap, editorKey, viewer
           background: rgba(178, 54, 54, 0.16);
           border-color: rgba(255, 156, 156, 0.18);
           color: #ffdede;
+        }
+
+        .light .plan-node-card,
+        .light .plan-node-empty {
+          background: rgba(255, 255, 255, 0.82);
+          border-color: rgba(66, 91, 135, 0.12);
         }
 
         .selector-toolbar {
@@ -4786,6 +5101,16 @@ export default function MainProjectPage({ projects, bootstrap, editorKey, viewer
 
           .dialog-actions {
             flex-direction: column-reverse;
+          }
+
+          .plan-node-section-head,
+          .plan-node-card-head {
+            flex-direction: column;
+            align-items: stretch;
+          }
+
+          .plan-node-grid {
+            grid-template-columns: 1fr;
           }
 
           .dialog-btn {
