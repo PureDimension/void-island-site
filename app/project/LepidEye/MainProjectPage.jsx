@@ -39,11 +39,15 @@ const PLAN_STATUS_OPTIONS = [
   { value: "done", label: "已完成" }
 ];
 const PERMISSION_LEVEL_OPTIONS = [
-  { value: "0", label: "0 级 / 公开" },
-  { value: "1", label: "1 级 / 小类隐藏" },
-  { value: "2", label: "2 级 / 大类隐藏" },
-  { value: "3", label: "3 级 / 完全隐藏" }
+  { value: "0", label: "0 级 / 完全公开" },
+  { value: "1", label: "1 级 / 名称隐藏" },
+  { value: "2", label: "2 级 / 小类隐藏" },
+  { value: "3", label: "3 级 / 大类隐藏" }
 ];
+
+function maskMinor(major) {
+  return `${major} / ??`;
+}
 
 function getBeijingNow() {
   const parts = new Intl.DateTimeFormat("en-CA", {
@@ -313,9 +317,9 @@ function sanitizeEventForMode(event, mode) {
     return {
       ...event,
       displayMajor: event.major_category,
-      displayMinor: "??",
-      displayTaskName: `${event.major_category} / ??`,
-      displayNote: "高级权限下仅隐藏小类。"
+      displayMinor: event.minor_category,
+      displayTaskName: "??",
+      displayNote: "最高权限下隐藏名称。"
     };
   }
 
@@ -333,29 +337,37 @@ function sanitizeEventForMode(event, mode) {
       return {
         ...event,
         displayMajor: event.major_category,
-        displayMinor: "??",
-        displayTaskName: `${event.major_category} / ??`,
-        displayNote: "中级权限下隐藏小类。"
+        displayMinor: event.minor_category,
+        displayTaskName: "??",
+        displayNote: "部分权限下隐藏名称。"
       };
     }
     return {
       ...event,
-      displayMajor: "秘密事务",
-      displayMinor: "受限内容",
-      displayTaskName: "秘密事务",
-      displayNote: "公开视图已隐藏该事务详情。"
+      displayMajor: event.major_category,
+      displayMinor: "??",
+      displayTaskName: maskMinor(event.major_category),
+      displayNote: "部分权限下隐藏小类。"
     };
   }
 
-  if (event.permission_level >= 3) return null;
-
-  if (event.permission_level === 2) {
+  if (event.permission_level === 3) {
     return {
       ...event,
       displayMajor: "秘密事务",
       displayMinor: "受限内容",
       displayTaskName: "秘密事务",
-      displayNote: "公开视图已隐藏该事务详情。"
+      displayNote: "公开权限下隐藏大类。"
+    };
+  }
+
+  if (event.permission_level === 2) {
+    return {
+      ...event,
+      displayMajor: event.major_category,
+      displayMinor: "??",
+      displayTaskName: maskMinor(event.major_category),
+      displayNote: "公开权限下隐藏小类。"
     };
   }
 
@@ -363,9 +375,9 @@ function sanitizeEventForMode(event, mode) {
     return {
       ...event,
       displayMajor: event.major_category,
-      displayMinor: "??",
-      displayTaskName: `${event.major_category} / ??`,
-      displayNote: "公开视图仅显示大类。"
+      displayMinor: event.minor_category,
+      displayTaskName: "??",
+      displayNote: "公开权限下隐藏名称。"
     };
   }
 
@@ -402,9 +414,9 @@ function sanitizePlanForMode(plan, mode) {
     return {
       ...plan,
       displayMajor: plan.major_category,
-      displayMinor: "??",
-      displayTaskName: `${plan.major_category} / ??`,
-      displayNote: "高级权限下仅隐藏小类。"
+      displayMinor: plan.minor_category,
+      displayTaskName: "??",
+      displayNote: "最高权限下隐藏名称。"
     };
   }
 
@@ -422,29 +434,37 @@ function sanitizePlanForMode(plan, mode) {
       return {
         ...plan,
         displayMajor: plan.major_category,
-        displayMinor: "??",
-        displayTaskName: `${plan.major_category} / ??`,
-        displayNote: "中级权限下隐藏小类。"
+        displayMinor: plan.minor_category,
+        displayTaskName: "??",
+        displayNote: "部分权限下隐藏名称。"
       };
     }
     return {
       ...plan,
-      displayMajor: "秘密计划",
-      displayMinor: "受限内容",
-      displayTaskName: "秘密计划",
-      displayNote: "公开视图已隐藏该计划详情。"
+      displayMajor: plan.major_category,
+      displayMinor: "??",
+      displayTaskName: maskMinor(plan.major_category),
+      displayNote: "部分权限下隐藏小类。"
     };
   }
 
-  if (plan.permission_level >= 3) return null;
-
-  if (plan.permission_level === 2) {
+  if (plan.permission_level === 3) {
     return {
       ...plan,
       displayMajor: "秘密计划",
       displayMinor: "受限内容",
       displayTaskName: "秘密计划",
-      displayNote: "公开视图已隐藏该计划详情。"
+      displayNote: "公开权限下隐藏大类。"
+    };
+  }
+
+  if (plan.permission_level === 2) {
+    return {
+      ...plan,
+      displayMajor: plan.major_category,
+      displayMinor: "??",
+      displayTaskName: maskMinor(plan.major_category),
+      displayNote: "公开权限下隐藏小类。"
     };
   }
 
@@ -452,9 +472,9 @@ function sanitizePlanForMode(plan, mode) {
     return {
       ...plan,
       displayMajor: plan.major_category,
-      displayMinor: "??",
-      displayTaskName: `${plan.major_category} / ??`,
-      displayNote: "公开视图仅显示大类。"
+      displayMinor: plan.minor_category,
+      displayTaskName: "??",
+      displayNote: "公开权限下隐藏名称。"
     };
   }
 
@@ -558,9 +578,9 @@ function expandTimelineEvents(events, rangeStart, rangeEnd, timelinePastOffset) 
 
 function getAccessLabel(accessLevel) {
   if (accessLevel === "creator") return "管理员";
-  if (accessLevel === "high") return "高";
-  if (accessLevel === "medium") return "中";
-  return "低";
+  if (accessLevel === "high") return "最高";
+  if (accessLevel === "medium") return "部分权限";
+  return "公开权限";
 }
 
 function formatDateTimeField(date) {
@@ -719,10 +739,10 @@ function collectCategoryOptions(items) {
 
 function getPermissionMatrix(accessLevel) {
   const rows = [
-    { level: "0 级", description: "公开" },
-    { level: "1 级", description: "小类隐藏" },
-    { level: "2 级", description: "大类隐藏" },
-    { level: "3 级", description: "完全隐藏" }
+    { level: "0 级", description: "完全公开" },
+    { level: "1 级", description: "名称隐藏" },
+    { level: "2 级", description: "小类隐藏" },
+    { level: "3 级", description: "大类隐藏" }
   ];
 
   if (accessLevel === "creator") {
@@ -731,27 +751,27 @@ function getPermissionMatrix(accessLevel) {
 
   if (accessLevel === "high") {
     return [
-      { level: "0 级", access: "公开" },
-      { level: "1 级", access: "公开" },
-      { level: "2 级", access: "公开" },
-      { level: "3 级", access: "小类隐藏" }
+      { level: "0 级", access: "完全公开" },
+      { level: "1 级", access: "完全公开" },
+      { level: "2 级", access: "完全公开" },
+      { level: "3 级", access: "名称隐藏" }
     ];
   }
 
   if (accessLevel === "medium") {
     return [
-      { level: "0 级", access: "公开" },
-      { level: "1 级", access: "公开" },
-      { level: "2 级", access: "小类隐藏" },
-      { level: "3 级", access: "大类隐藏" }
+      { level: "0 级", access: "完全公开" },
+      { level: "1 级", access: "完全公开" },
+      { level: "2 级", access: "名称隐藏" },
+      { level: "3 级", access: "小类隐藏" }
     ];
   }
 
   return [
-    { level: "0 级", access: "公开" },
-    { level: "1 级", access: "小类隐藏" },
-    { level: "2 级", access: "大类隐藏" },
-    { level: "3 级", access: "完全隐藏" }
+    { level: "0 级", access: "完全公开" },
+    { level: "1 级", access: "名称隐藏" },
+    { level: "2 级", access: "小类隐藏" },
+    { level: "3 级", access: "大类隐藏" }
   ];
 }
 
@@ -784,6 +804,7 @@ export default function MainProjectPage({ projects, bootstrap, editorKey, viewer
   const [selectorAddKind, setSelectorAddKind] = useState("keyword");
   const [selectorFilters, setSelectorFilters] = useState([]);
   const [selectorOpenGroups, setSelectorOpenGroups] = useState({});
+  const [selectorShowInactiveGroups, setSelectorShowInactiveGroups] = useState({});
   const [timelinePanelHeight, setTimelinePanelHeight] = useState(null);
   const docPanelRef = useRef(null);
   const timelinePanelRef = useRef(null);
@@ -1388,6 +1409,7 @@ export default function MainProjectPage({ projects, bootstrap, editorKey, viewer
       setSelectorSort("nearest");
       setSelectorAddKind("keyword");
       setSelectorOpenGroups({});
+      setSelectorShowInactiveGroups({});
     }
     setActiveDialog(type);
   }
@@ -2107,7 +2129,8 @@ export default function MainProjectPage({ projects, bootstrap, editorKey, viewer
                       }}
                     >
                       <div
-                        className="plan-label"
+                        className={`plan-label ${mapPlanState(plan.status)}`}
+                        style={{ "--plan-color": plan.color }}
                         onMouseEnter={(event) => openHoverCard(event, planHoverDetail)}
                         onMouseMove={moveHoverCard}
                         onMouseLeave={closeHoverCard}
@@ -2119,9 +2142,6 @@ export default function MainProjectPage({ projects, bootstrap, editorKey, viewer
                       <div
                         className="plan-track"
                         style={{ gridColumn: `2 / span ${planColumnCount}`, backgroundSize: `${planUnitWidth}px 100%` }}
-                        onMouseEnter={(event) => openHoverCard(event, planHoverDetail)}
-                        onMouseMove={moveHoverCard}
-                        onMouseLeave={closeHoverCard}
                       >
                         {dueIndex !== null && dueIndex >= 0 && dueIndex < planColumnCount && (
                           <div className="plan-due-cell" style={{ left: `${dueIndex * planUnitWidth}px`, width: `${planUnitWidth}px` }} />
@@ -2135,9 +2155,6 @@ export default function MainProjectPage({ projects, bootstrap, editorKey, viewer
                               "--plan-color": plan.color,
                               "--plan-progress": `${clampProgress(plan.progress)}%`
                             }}
-                            onMouseEnter={(event) => openHoverCard(event, planHoverDetail)}
-                            onMouseMove={moveHoverCard}
-                            onMouseLeave={closeHoverCard}
                           >
                             <div className="plan-bar-remaining" />
                             <div className="plan-bar-progress" />
@@ -2432,25 +2449,48 @@ export default function MainProjectPage({ projects, bootstrap, editorKey, viewer
 
                 <div className="selector-list">
                   {selectorGroups.some((group) => group.items.length) ? (
-                    selectorGroups.map((group) => (
-                      <section key={`${currentSelectorEntity}-${group.label}`} className="selector-group">
-                        <button
-                          type="button"
-                          className="selector-group-toggle"
-                          onClick={() =>
-                            setSelectorOpenGroups((current) => ({
-                              ...current,
-                              [group.label]: !(current[group.label] ?? true)
-                            }))
-                          }
-                        >
-                          <span>{group.label}</span>
-                          <strong>{group.items.length}</strong>
-                        </button>
-                        {(selectorOpenGroups[group.label] ?? true) && (
-                          <div className="selector-group-body">
-                            {group.items.length ? (
-                              group.items.map((record) => (
+                    selectorGroups.map((group) => {
+                      const visibleItems =
+                        currentSelectorEntity === "plan" && !(selectorShowInactiveGroups[group.label] ?? false)
+                          ? group.items.filter((record) => record.status === "primary" || record.status === "active")
+                          : group.items;
+
+                      return (
+                        <section key={`${currentSelectorEntity}-${group.label}`} className="selector-group">
+                          <div className="selector-group-head">
+                            <button
+                              type="button"
+                              className="selector-group-toggle"
+                              onClick={() =>
+                                setSelectorOpenGroups((current) => ({
+                                  ...current,
+                                  [group.label]: !(current[group.label] ?? true)
+                                }))
+                              }
+                            >
+                              <span>{group.label}</span>
+                              <strong>{visibleItems.length}</strong>
+                            </button>
+                            {currentSelectorEntity === "plan" ? (
+                              <label className="selector-group-check">
+                                <input
+                                  type="checkbox"
+                                  checked={selectorShowInactiveGroups[group.label] ?? false}
+                                  onChange={(event) =>
+                                    setSelectorShowInactiveGroups((current) => ({
+                                      ...current,
+                                      [group.label]: event.target.checked
+                                    }))
+                                  }
+                                />
+                                <span>展开非活跃计划</span>
+                              </label>
+                            ) : null}
+                          </div>
+                          {(selectorOpenGroups[group.label] ?? true) && (
+                            <div className="selector-group-body">
+                              {visibleItems.length ? (
+                                visibleItems.map((record) => (
                                 <button
                                   key={`${currentSelectorEntity}-${record.id}`}
                                   type="button"
@@ -2477,14 +2517,15 @@ export default function MainProjectPage({ projects, bootstrap, editorKey, viewer
                                     )}
                                   </div>
                                 </button>
-                              ))
-                            ) : (
-                              <div className="selector-group-empty">当前分组没有对象。</div>
-                            )}
-                          </div>
-                        )}
-                      </section>
-                    ))
+                                ))
+                              ) : (
+                                <div className="selector-group-empty">当前分组没有对象。</div>
+                              )}
+                            </div>
+                          )}
+                        </section>
+                      );
+                    })
                   ) : (
                     <div className="selector-empty">当前筛选条件下没有可编辑对象。</div>
                   )}
@@ -3084,13 +3125,13 @@ export default function MainProjectPage({ projects, bootstrap, editorKey, viewer
 
         .viewer-badge {
           position: absolute;
-          top: 0;
-          left: 50%;
-          transform: translate(-50%, calc(-100% - 2px));
+          top: -14px;
+          left: 18px;
+          transform: none;
           z-index: 2;
           display: inline-flex;
           align-items: center;
-          justify-content: center;
+          justify-content: flex-start;
           gap: 8px;
           max-width: min(82%, 220px);
           min-width: 128px;
@@ -3136,6 +3177,7 @@ export default function MainProjectPage({ projects, bootstrap, editorKey, viewer
           gap: 8px;
           margin-top: 34px;
           margin-bottom: 14px;
+          padding-top: 20px;
         }
 
         .access-arrow {
@@ -3720,6 +3762,26 @@ export default function MainProjectPage({ projects, bootstrap, editorKey, viewer
           box-shadow:
             14px 0 24px rgba(0, 0, 0, 0.14),
             inset 0 1px 0 rgba(255, 255, 255, 0.06);
+          transition: transform 0.18s ease, box-shadow 0.18s ease, border-color 0.18s ease, background 0.18s ease, filter 0.18s ease;
+        }
+
+        .plan-label.active {
+          border-color: color-mix(in srgb, var(--plan-color) 58%, rgba(255, 255, 255, 0.18) 42%);
+          background:
+            linear-gradient(160deg, color-mix(in srgb, var(--plan-color) 14%, rgba(255, 255, 255, 0.06) 86%), rgba(255, 255, 255, 0.02)),
+            linear-gradient(160deg, rgba(255, 255, 255, 0.06), rgba(255, 255, 255, 0.02));
+        }
+
+        .plan-label.primary {
+          border-color: color-mix(in srgb, var(--plan-color) 72%, rgba(255, 255, 255, 0.22) 28%);
+          background:
+            linear-gradient(160deg, color-mix(in srgb, var(--plan-color) 18%, rgba(255, 255, 255, 0.08) 82%), rgba(255, 255, 255, 0.03)),
+            linear-gradient(160deg, rgba(255, 255, 255, 0.08), rgba(255, 255, 255, 0.02));
+          box-shadow:
+            14px 0 24px rgba(0, 0, 0, 0.14),
+            inset 0 1px 0 rgba(255, 255, 255, 0.08),
+            0 0 0 1px color-mix(in srgb, var(--plan-color) 28%, transparent 72%),
+            0 0 24px color-mix(in srgb, var(--plan-color) 22%, transparent 78%);
         }
 
         .plan-label strong {
@@ -3833,9 +3895,16 @@ export default function MainProjectPage({ projects, bootstrap, editorKey, viewer
         }
 
         .plan-label:hover,
-        .plan-bar:hover,
         .plan-node:hover {
           filter: brightness(1.08);
+        }
+
+        .plan-label:hover {
+          transform: translateY(-1px);
+          box-shadow:
+            16px 0 26px rgba(0, 0, 0, 0.16),
+            inset 0 1px 0 rgba(255, 255, 255, 0.08),
+            0 0 18px rgba(186, 222, 255, 0.12);
         }
 
         .plan-bar:hover {
@@ -4402,6 +4471,11 @@ export default function MainProjectPage({ projects, bootstrap, editorKey, viewer
           gap: 8px;
         }
 
+        .selector-group-head {
+          display: grid;
+          gap: 8px;
+        }
+
         .selector-group-toggle {
           display: flex;
           align-items: center;
@@ -4423,6 +4497,22 @@ export default function MainProjectPage({ projects, bootstrap, editorKey, viewer
         .selector-group-toggle strong {
           color: var(--muted);
           font-size: 12px;
+        }
+
+        .selector-group-check {
+          display: inline-flex;
+          align-items: center;
+          gap: 8px;
+          padding: 0 8px 0 4px;
+          color: var(--muted);
+          font-size: 12px;
+          letter-spacing: 0.04em;
+        }
+
+        .selector-group-check input {
+          width: 15px;
+          height: 15px;
+          accent-color: #badeff;
         }
 
         .selector-group-body {
@@ -4538,9 +4628,14 @@ export default function MainProjectPage({ projects, bootstrap, editorKey, viewer
 
           .selector-toolbar,
           .selector-add-filter,
+          .selector-group-head,
           .selector-record-head,
           .selector-record-meta {
             display: grid;
+          }
+
+          .selector-group-check {
+            padding-left: 8px;
           }
 
           .selector-filter-row {
@@ -4569,6 +4664,20 @@ export default function MainProjectPage({ projects, bootstrap, editorKey, viewer
           .stats-panel,
           .ai-panel {
             padding: 16px;
+          }
+
+          .access-banner {
+            padding-top: 18px;
+          }
+
+          .viewer-badge {
+            left: 14px;
+            max-width: calc(100% - 28px);
+          }
+
+          .access-core {
+            min-width: 0;
+            width: 100%;
           }
 
           .lepid-eye-dialog {
@@ -4600,6 +4709,12 @@ export default function MainProjectPage({ projects, bootstrap, editorKey, viewer
 
           .panel-controls {
             justify-content: flex-start;
+          }
+
+          .timeline-scroll,
+          .plan-scroll {
+            margin: 0 -4px;
+            padding: 0 4px 4px;
           }
         }
       `}</style>

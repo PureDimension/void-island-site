@@ -44,6 +44,10 @@ const PLAN_COLOR_FALLBACKS = {
 
 const ACCESS_LEVELS = new Set(["low", "medium", "high", "creator"]);
 
+function maskMinor(major) {
+  return `${major} / ??`;
+}
+
 function getBeijingDate() {
   const parts = new Intl.DateTimeFormat("en-CA", {
     timeZone: "Asia/Shanghai",
@@ -556,8 +560,7 @@ function sanitizeEventForStats(event, includePrivate) {
     if (event.permission_level <= 2) return event;
     return {
       ...event,
-      minor_category: "??",
-      task_name: `${event.major_category} / ??`
+      task_name: "??"
     };
   }
 
@@ -566,10 +569,17 @@ function sanitizeEventForStats(event, includePrivate) {
     if (event.permission_level === 2) {
       return {
         ...event,
-        minor_category: "??",
-        task_name: `${event.major_category} / ??`
+        task_name: "??"
       };
     }
+    return {
+      ...event,
+      minor_category: "??",
+      task_name: maskMinor(event.major_category)
+    };
+  }
+
+  if (event.permission_level === 3) {
     return {
       ...event,
       major_category: "秘密事务",
@@ -577,21 +587,17 @@ function sanitizeEventForStats(event, includePrivate) {
       task_name: "秘密事务"
     };
   }
-
-  if (event.permission_level >= 3) return null;
   if (event.permission_level === 2) {
     return {
       ...event,
-      major_category: "秘密事务",
-      minor_category: "受限内容",
-      task_name: "秘密事务"
+      minor_category: "??",
+      task_name: maskMinor(event.major_category)
     };
   }
   if (event.permission_level === 1) {
     return {
       ...event,
-      minor_category: "??",
-      task_name: `${event.major_category} / ??`
+      task_name: "??"
     };
   }
   return event;
@@ -604,8 +610,7 @@ function sanitizePlanForStats(plan, includePrivate) {
     if (plan.permission_level <= 2) return plan;
     return {
       ...plan,
-      minor_category: "??",
-      task_name: `${plan.major_category} / ??`
+      task_name: "??"
     };
   }
 
@@ -614,10 +619,17 @@ function sanitizePlanForStats(plan, includePrivate) {
     if (plan.permission_level === 2) {
       return {
         ...plan,
-        minor_category: "??",
-        task_name: `${plan.major_category} / ??`
+        task_name: "??"
       };
     }
+    return {
+      ...plan,
+      minor_category: "??",
+      task_name: maskMinor(plan.major_category)
+    };
+  }
+
+  if (plan.permission_level === 3) {
     return {
       ...plan,
       major_category: "秘密计划",
@@ -625,21 +637,17 @@ function sanitizePlanForStats(plan, includePrivate) {
       task_name: "秘密计划"
     };
   }
-
-  if (plan.permission_level >= 3) return null;
   if (plan.permission_level === 2) {
     return {
       ...plan,
-      major_category: "秘密计划",
-      minor_category: "受限内容",
-      task_name: "秘密计划"
+      minor_category: "??",
+      task_name: maskMinor(plan.major_category)
     };
   }
   if (plan.permission_level === 1) {
     return {
       ...plan,
-      minor_category: "??",
-      task_name: `${plan.major_category} / ??`
+      task_name: "??"
     };
   }
   return plan;
