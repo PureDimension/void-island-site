@@ -248,26 +248,12 @@ function getTaskDurationMinutes(task) {
   return Math.max(1, task.endMinuteInDay - task.startMinuteInDay);
 }
 
-function getCellSegment(task, hour) {
-  const cellStart = hour * 60;
-  const cellEnd = cellStart + 60;
-  const overlapStart = Math.max(task.startMinuteInDay, cellStart);
-  const overlapEnd = Math.min(task.endMinuteInDay, cellEnd);
-  if (overlapEnd <= overlapStart) return null;
-  return {
-    topPx: ((overlapStart - cellStart) / 60) * timelineRowHeight,
-    heightPx: Math.max(2, ((overlapEnd - overlapStart) / 60) * timelineRowHeight)
-  };
-}
-
-function buildTimelineSegments(taskGroup, hour) {
-  const cellStart = hour * 60;
-  const cellEnd = cellStart + 60;
-  const points = [cellStart, cellEnd];
+function buildTimelineSegments(taskGroup) {
+  const points = [0, 24 * 60];
 
   taskGroup.forEach((task) => {
-    const overlapStart = Math.max(task.startMinuteInDay, cellStart);
-    const overlapEnd = Math.min(task.endMinuteInDay, cellEnd);
+    const overlapStart = Math.max(task.startMinuteInDay, 0);
+    const overlapEnd = Math.min(task.endMinuteInDay, 24 * 60);
     if (overlapEnd > overlapStart) {
       points.push(overlapStart, overlapEnd);
     }
@@ -298,9 +284,9 @@ function buildTimelineSegments(taskGroup, hour) {
       );
 
       return {
-        key: `${hour}-${point}-${nextPoint}`,
-        topPx: ((point - cellStart) / 60) * timelineRowHeight,
-        heightPx: Math.max(2, ((nextPoint - point) / 60) * timelineRowHeight),
+        key: `${point}-${nextPoint}`,
+        topPx: (point / 60) * timelineRowHeight,
+        heightPx: Math.max(4, ((nextPoint - point) / 60) * timelineRowHeight),
         color: mixTaskColors(activeTasks, activeTasks.length > 1 ? 0.86 : 0.78),
         isOverlap: activeTasks.length > 1,
         tasks: activeTasks,
@@ -2045,6 +2031,27 @@ export default function MainProjectPage({ projects, bootstrap, editorKey, viewer
                     onHoverEnd={closeHoverCard}
                   />
                 ))}
+                <div
+                  className="timeline-event-layer"
+                  style={{
+                    left: `${timelineHourLabelWidth}px`,
+                    width: `${timelineDays.length * timelineDayWidth}px`,
+                    height: `${24 * timelineRowHeight}px`
+                  }}
+                >
+                  {timelineDays.map((day, dayIndex) => (
+                    <TimelineDayColumn
+                      key={day.key}
+                      day={day}
+                      dayIndex={dayIndex}
+                      taskRows={timelineTasks}
+                      isCreator={isCreator}
+                      onHover={openHoverCard}
+                      onHoverMove={moveHoverCard}
+                      onHoverEnd={closeHoverCard}
+                    />
+                  ))}
+                </div>
               </div>
             </div>
           </article>
@@ -3518,10 +3525,14 @@ export default function MainProjectPage({ projects, bootstrap, editorKey, viewer
           width: max-content;
         }
 
+        .timeline-grid {
+          position: relative;
+        }
+
         .timeline-header {
           position: sticky;
           top: 0;
-          z-index: 8;
+          z-index: 20;
           background: linear-gradient(180deg, var(--panel-strong), color-mix(in srgb, var(--panel-strong) 82%, transparent 18%));
           backdrop-filter: blur(12px);
         }
@@ -3532,7 +3543,7 @@ export default function MainProjectPage({ projects, bootstrap, editorKey, viewer
         .plan-label {
           position: sticky;
           left: 0;
-          z-index: 2;
+          z-index: 12;
           background: var(--panel-strong);
         }
 
@@ -3649,6 +3660,56 @@ export default function MainProjectPage({ projects, bootstrap, editorKey, viewer
           justify-content: center;
         }
 
+        .timeline-overlap-marker {
+          position: absolute;
+          left: 6px;
+          right: 6px;
+          border-radius: 999px;
+          pointer-events: none;
+          background:
+            linear-gradient(180deg, rgba(255, 255, 255, 0.18), rgba(255, 255, 255, 0.04)),
+            repeating-linear-gradient(
+              135deg,
+              rgba(255, 255, 255, 0.28) 0px,
+              rgba(255, 255, 255, 0.28) 8px,
+              rgba(20, 28, 42, 0.12) 8px,
+              rgba(20, 28, 42, 0.12) 16px
+            );
+          box-shadow:
+            inset 0 0 0 1px rgba(255, 255, 255, 0.18),
+            0 0 10px rgba(186, 222, 255, 0.12);
+          opacity: 0.7;
+          z-index: 5;
+        }
+
+        .timeline-overlap-marker.strong {
+          opacity: 0.92;
+          box-shadow:
+            inset 0 0 0 1px rgba(255, 255, 255, 0.26),
+            0 0 14px rgba(255, 170, 170, 0.18);
+        }
+
+        .timeline-event-layer {
+          position: absolute;
+          top: 0;
+          pointer-events: none;
+          z-index: 4;
+          overflow: hidden;
+        }
+
+        .timeline-day-overlay {
+          position: absolute;
+          top: 0;
+          width: ${timelineDayWidth}px;
+          height: 100%;
+          pointer-events: none;
+        }
+
+        .timeline-day-overlay .timeline-task,
+        .timeline-day-overlay .timeline-repeat-fill {
+          pointer-events: auto;
+        }
+
         .timeline-task-text {
           display: block;
           width: 100%;
@@ -3678,15 +3739,6 @@ export default function MainProjectPage({ projects, bootstrap, editorKey, viewer
 
         .timeline-task.mix {
           border-color: rgba(186, 222, 255, 0.34);
-        }
-
-        .timeline-task.overlap {
-          border-color: rgba(255, 255, 255, 0.34);
-          box-shadow:
-            inset 0 1px 0 rgba(255, 255, 255, 0.14),
-            0 8px 20px rgba(0, 0, 0, 0.18),
-            0 0 18px rgba(186, 222, 255, 0.12);
-          filter: saturate(1.08) brightness(1.02);
         }
 
         .timeline-repeat-fill {
@@ -3725,12 +3777,19 @@ export default function MainProjectPage({ projects, bootstrap, editorKey, viewer
           filter: saturate(1.08) brightness(0.98);
         }
 
-        .light .timeline-task.overlap {
-          border-color: rgba(70, 96, 142, 0.34);
+        .light .timeline-overlap-marker {
+          background:
+            linear-gradient(180deg, rgba(255, 255, 255, 0.3), rgba(255, 255, 255, 0.08)),
+            repeating-linear-gradient(
+              135deg,
+              rgba(96, 132, 189, 0.22) 0px,
+              rgba(96, 132, 189, 0.22) 8px,
+              rgba(255, 255, 255, 0.08) 8px,
+              rgba(255, 255, 255, 0.08) 16px
+            );
           box-shadow:
-            inset 0 1px 0 rgba(255, 255, 255, 0.48),
-            0 6px 16px rgba(53, 73, 108, 0.16),
-            0 0 12px rgba(125, 177, 255, 0.16);
+            inset 0 0 0 1px rgba(70, 96, 142, 0.14),
+            0 0 10px rgba(125, 177, 255, 0.14);
         }
 
         .light .timeline-repeat-fill {
@@ -4758,133 +4817,90 @@ export default function MainProjectPage({ projects, bootstrap, editorKey, viewer
   );
 }
 
-function FragmentRow({ hour, days, currentHour, taskRows, isCreator, onHover, onHoverMove, onHoverEnd }) {
+function FragmentRow({ hour, days, currentHour }) {
   return (
     <>
       <div className="timeline-hour">{String(hour).padStart(2, "0")}:00</div>
       {days.map((day, dayIndex) => {
-        const activeTasks = taskRows
-          .filter(
-            (item) =>
-              item.dayIndex === dayIndex &&
-              item.startMinuteInDay < (hour + 1) * 60 &&
-              item.endMinuteInDay > hour * 60
-          )
-          .sort(
-            (left, right) =>
-              left.startMinuteInDay - right.startMinuteInDay ||
-              left.endMinuteInDay - right.endMinuteInDay ||
-              left.label.localeCompare(right.label)
-          );
-        const activeDailyTask = activeTasks.find((item) => item.repeatType === "daily");
-        const slotTasks = activeTasks.filter(
-          (item) => item.repeatType === "none" || item.repeatType === "weekly" || item.repeatType === "monthly"
-        );
-        const timelineSegments = buildTimelineSegments(slotTasks, hour);
         const isPast = day.offset < 0 || (day.offset === 0 && hour < currentHour);
         const isToday = day.offset === 0;
         const isCurrent = day.offset === 0 && hour === currentHour;
-        const futureFactor = isPast || isToday ? 1 : 0.66;
-
-        let eventOpacity = 0.52;
-        const activeTask = slotTasks[0] ?? activeDailyTask;
-        if (activeTask?.nature === "core") eventOpacity = 1;
-        if (activeTask?.nature === "non_core") eventOpacity = 0.74;
-        if (activeTask?.nature === "support") eventOpacity = 0.46;
-        eventOpacity *= futureFactor;
 
         return (
           <div
             key={`${day.key}-${hour}`}
             className={`timeline-cell ${isPast ? "past" : ""} ${isToday ? "today" : ""} ${isCurrent ? "current" : ""}`}
-          >
-            {activeDailyTask && (
-              <div
-                className="timeline-repeat-fill"
-                style={{
-                  "--event-color": activeDailyTask.color,
-                  "--event-opacity": eventOpacity,
-                  ...(getCellSegment(activeDailyTask, hour)
-                    ? {
-                        top: `${getCellSegment(activeDailyTask, hour).topPx}px`,
-                        height: `${getCellSegment(activeDailyTask, hour).heightPx}px`
-                      }
-                    : {}),
-                  background: `color-mix(in srgb, ${activeDailyTask.color} 72%, transparent 28%)`
-                }}
-                onMouseEnter={(event) =>
-                  onHover(event, {
-                    type: "event",
-                    title: activeDailyTask.label,
-                    lines: [
-                      `重复：${repeatTypeLabel(activeDailyTask.repeatType)}${
-                        activeDailyTask.repeatUntil ? ` · 至 ${activeDailyTask.repeatUntil}` : ""
-                      }`,
-                      `事务分类：${activeDailyTask.majorCategory} · ${activeDailyTask.minorCategory}`,
-                      `起始时间：${activeDailyTask.originalStart}`,
-                      activeDailyTask.note || "无备注"
-                    ],
-                    editTarget: isCreator ? { entity: "event", id: activeDailyTask.sourceId } : null
-                  })
-                }
-                onMouseMove={onHoverMove}
-                onMouseLeave={onHoverEnd}
-              >
-                {activeDailyTask.showDailyLabel && hour === activeDailyTask.start && (
-                  <span className="timeline-repeat-label">{activeDailyTask.label}</span>
-                )}
-              </div>
-            )}
-            {timelineSegments.map((segment) => {
-              const segmentHoverDetail = {
-                type: "event",
-                title: segment.isOverlap ? "交叉事务" : segment.label,
-                lines: [
-                  `事务分类：${segment.tasks.map((item) => `${item.majorCategory} · ${item.minorCategory}`).join(" / ")}`,
-                  ...segment.tasks.map((item) => `起始时间：${item.originalStart}`),
-                  segment.tasks.map((item) => item.note).filter(Boolean).join(" / ") || "无备注"
-                ],
-                editTarget:
-                  isCreator && segment.tasks.length === 1
-                    ? { entity: "event", id: segment.tasks[0].sourceId }
-                    : null
-              };
-
-              return (
-              <div
-                key={segment.key}
-                className={`timeline-task ${segment.isOverlap ? "overlap" : (segment.tasks[0]?.tone ?? "mix")}`}
-                style={{
-                  top: `${segment.topPx}px`,
-                  height: `${Math.max(6, segment.heightPx)}px`,
-                  "--event-color": segment.tasks[0]?.color ?? "rgb(186, 222, 255)",
-                  "--event-opacity": eventOpacity,
-                  background: segment.isOverlap
-                    ? `linear-gradient(180deg, rgba(255, 255, 255, 0.24), rgba(255, 255, 255, 0.08)),
-                       repeating-linear-gradient(135deg, ${segment.tasks
-                         .map((item, index) => `${item.color} ${index * 10}px ${(index + 1) * 10}px`)
-                         .join(", ")})`
-                    : `color-mix(in srgb, ${segment.tasks[0]?.color ?? "rgb(186, 222, 255)"} 82%, white 18%)`
-                }}
-                onMouseEnter={(event) => onHover(event, segmentHoverDetail)}
-                onMouseMove={onHoverMove}
-                onMouseLeave={onHoverEnd}
-              >
-                <span
-                  className="timeline-task-text"
-                  style={{
-                    fontSize: `${segment.fontSize}px`,
-                    transform: `scaleX(${segment.scaleX})`
-                  }}
-                >
-                  {segment.label}
-                </span>
-              </div>
-              );
-            })}
-          </div>
+          />
         );
       })}
     </>
+  );
+}
+
+function TimelineDayColumn({ day, dayIndex, taskRows, isCreator, onHover, onHoverMove, onHoverEnd }) {
+  const dayTasks = taskRows.filter((item) => item.dayIndex === dayIndex);
+  const timelineSegments = buildTimelineSegments(dayTasks);
+
+  return (
+    <div className={`timeline-day-overlay ${day.isToday ? "today" : ""}`} style={{ left: `${dayIndex * timelineDayWidth}px` }}>
+      {timelineSegments.map((segment) => {
+        const primaryTask = segment.tasks[0] ?? null;
+        const isFutureSegment = day.offset > 0;
+        let eventOpacity = 0.52;
+        if (primaryTask?.nature === "core") eventOpacity = 1;
+        if (primaryTask?.nature === "non_core") eventOpacity = 0.74;
+        if (primaryTask?.nature === "support") eventOpacity = 0.46;
+        if (isFutureSegment) eventOpacity *= 0.66;
+
+        const heightPx = Math.max(6, segment.heightPx);
+        const fontSize = Math.max(6, Math.min(11, heightPx * 0.42));
+
+        const segmentHoverDetail = {
+          type: "event",
+          title: segment.isOverlap ? "事务重叠" : primaryTask?.label ?? segment.label,
+          lines: [
+            `事务分类：${segment.tasks.map((item) => `${item.majorCategory} · ${item.minorCategory}`).join(" / ")}`,
+            ...segment.tasks.map((item) => `起始时间：${item.originalStart}`),
+            segment.tasks.map((item) => item.note).filter(Boolean).join(" / ") || "无备注"
+          ],
+          editTarget:
+            isCreator && segment.tasks.length === 1
+              ? { entity: "event", id: segment.tasks[0].sourceId }
+              : null
+        };
+
+        return (
+          <div
+            key={`${day.key}-${segment.key}`}
+            className={`timeline-task ${primaryTask?.tone ?? "mix"} ${segment.isOverlap ? "overlap-visual" : ""}`}
+            style={{
+              top: `${segment.topPx}px`,
+              height: `${heightPx}px`,
+              "--event-color": primaryTask?.color ?? "rgb(186, 222, 255)",
+              "--event-opacity": eventOpacity,
+              background: segment.isOverlap
+                ? `repeating-linear-gradient(135deg, ${segment.tasks
+                    .map((item, index) => `${item.color} ${index * 10}px ${(index + 1) * 10}px`)
+                    .join(", ")})`
+                : `color-mix(in srgb, ${primaryTask?.color ?? "rgb(186, 222, 255)"} 82%, white 18%)`
+            }}
+            onMouseEnter={(event) => onHover(event, segmentHoverDetail)}
+            onMouseMove={onHoverMove}
+            onMouseLeave={onHoverEnd}
+          >
+            {!segment.isOverlap && (
+              <span
+                className="timeline-task-text"
+                style={{
+                  fontSize: `${fontSize}px`
+                }}
+              >
+                {primaryTask?.label ?? ""}
+              </span>
+            )}
+          </div>
+        );
+      })}
+    </div>
   );
 }
