@@ -260,7 +260,7 @@ function getCellSegment(task, hour) {
   };
 }
 
-function getOverlapSegments(taskGroup, hour) {
+function buildTimelineSegments(taskGroup, hour) {
   const cellStart = hour * 60;
   const cellEnd = cellStart + 60;
   const points = [cellStart, cellEnd];
@@ -273,21 +273,40 @@ function getOverlapSegments(taskGroup, hour) {
     }
   });
 
-  return [...new Set(points)]
-    .sort((a, b) => a - b)
-    .slice(0, -1)
-    .map((point, index, sorted) => {
-      const nextPoint = sorted[index + 1];
+  const sortedPoints = [...new Set(points)].sort((a, b) => a - b);
+
+  return sortedPoints
+    .map((point, index) => {
+      const nextPoint = sortedPoints[index + 1];
       if (nextPoint == null || nextPoint <= point) return null;
       const activeTasks = taskGroup.filter(
         (task) => task.startMinuteInDay < nextPoint && task.endMinuteInDay > point
       );
-      if (activeTasks.length < 2) return null;
+      if (!activeTasks.length) return null;
+
+      const uniqueLabels = [...new Set(activeTasks.map((task) => task.label))];
+      const sharedTask = activeTasks.length === 1 ? activeTasks[0] : null;
+      const label = sharedTask ? sharedTask.label : uniqueLabels.join("-交叉-");
+      const durationMinutes = nextPoint - point;
+      const fontSize = Math.max(
+        8,
+        Math.min(
+          11,
+          durationMinutes >= 24 ? 11 : durationMinutes >= 14 ? 10 : 9,
+          ((timelineDayWidth - 14) / Math.max(label.length, 2)) * 1.85
+        )
+      );
+
       return {
         key: `${hour}-${point}-${nextPoint}`,
         topPx: ((point - cellStart) / 60) * timelineRowHeight,
         heightPx: Math.max(2, ((nextPoint - point) / 60) * timelineRowHeight),
-        color: mixTaskColors(activeTasks)
+        color: mixTaskColors(activeTasks, activeTasks.length > 1 ? 0.86 : 0.78),
+        isOverlap: activeTasks.length > 1,
+        tasks: activeTasks,
+        label,
+        fontSize,
+        scaleX: Math.min(1, (timelineDayWidth - 14) / Math.max(label.length * fontSize * 0.72, 1))
       };
     })
     .filter(Boolean);
@@ -3606,8 +3625,9 @@ export default function MainProjectPage({ projects, bootstrap, editorKey, viewer
           position: absolute;
           left: 4px;
           right: 4px;
+          box-sizing: border-box;
           border-radius: 12px;
-          padding: 4px 6px;
+          padding: 2px 6px;
           font-size: 0.68rem;
           font-weight: 700;
           letter-spacing: 0.03em;
@@ -3624,6 +3644,19 @@ export default function MainProjectPage({ projects, bootstrap, editorKey, viewer
           opacity: var(--event-opacity, 0.88);
           transform-origin: center;
           transition: transform 0.18s ease, box-shadow 0.18s ease, filter 0.18s ease;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+        }
+
+        .timeline-task-text {
+          display: block;
+          width: 100%;
+          text-align: center;
+          white-space: nowrap;
+          transform-origin: center;
+          line-height: 1;
+          pointer-events: none;
         }
 
         .light .timeline-cell.today {
@@ -3647,6 +3680,15 @@ export default function MainProjectPage({ projects, bootstrap, editorKey, viewer
           border-color: rgba(186, 222, 255, 0.34);
         }
 
+        .timeline-task.overlap {
+          border-color: rgba(255, 255, 255, 0.34);
+          box-shadow:
+            inset 0 1px 0 rgba(255, 255, 255, 0.14),
+            0 8px 20px rgba(0, 0, 0, 0.18),
+            0 0 18px rgba(186, 222, 255, 0.12);
+          filter: saturate(1.08) brightness(1.02);
+        }
+
         .timeline-repeat-fill {
           position: absolute;
           left: 0;
@@ -3655,14 +3697,6 @@ export default function MainProjectPage({ projects, bootstrap, editorKey, viewer
           opacity: var(--event-opacity, 0.45);
           pointer-events: auto;
           transition: box-shadow 0.18s ease, filter 0.18s ease;
-        }
-
-        .timeline-overlap-segment {
-          position: absolute;
-          left: 0;
-          right: 0;
-          opacity: 0.72;
-          pointer-events: none;
         }
 
         .timeline-repeat-label {
@@ -3689,6 +3723,14 @@ export default function MainProjectPage({ projects, bootstrap, editorKey, viewer
             inset 0 1px 0 rgba(255, 255, 255, 0.42),
             0 4px 12px rgba(53, 73, 108, 0.12);
           filter: saturate(1.08) brightness(0.98);
+        }
+
+        .light .timeline-task.overlap {
+          border-color: rgba(70, 96, 142, 0.34);
+          box-shadow:
+            inset 0 1px 0 rgba(255, 255, 255, 0.48),
+            0 6px 16px rgba(53, 73, 108, 0.16),
+            0 0 12px rgba(125, 177, 255, 0.16);
         }
 
         .light .timeline-repeat-fill {
@@ -4735,69 +4777,27 @@ function FragmentRow({ hour, days, currentHour, taskRows, isCreator, onHover, on
               left.label.localeCompare(right.label)
           );
         const activeDailyTask = activeTasks.find((item) => item.repeatType === "daily");
-        const task = activeTasks.find(
-          (item) =>
-            item.startMinuteInDay >= hour * 60 &&
-            item.startMinuteInDay < (hour + 1) * 60 &&
-            (item.repeatType === "none" || item.repeatType === "weekly" || item.repeatType === "monthly")
+        const slotTasks = activeTasks.filter(
+          (item) => item.repeatType === "none" || item.repeatType === "weekly" || item.repeatType === "monthly"
         );
-        const hoverTasks = activeTasks.length ? activeTasks : task ? [task] : [];
-        const overlapSegments = getOverlapSegments(activeTasks, hour);
+        const timelineSegments = buildTimelineSegments(slotTasks, hour);
         const isPast = day.offset < 0 || (day.offset === 0 && hour < currentHour);
         const isToday = day.offset === 0;
         const isCurrent = day.offset === 0 && hour === currentHour;
         const futureFactor = isPast || isToday ? 1 : 0.66;
 
         let eventOpacity = 0.52;
-        const activeTask = task ?? activeDailyTask;
+        const activeTask = slotTasks[0] ?? activeDailyTask;
         if (activeTask?.nature === "core") eventOpacity = 1;
         if (activeTask?.nature === "non_core") eventOpacity = 0.74;
         if (activeTask?.nature === "support") eventOpacity = 0.46;
         eventOpacity *= futureFactor;
-        const hoverLines = hoverTasks.length
-          ? [
-              `事务分类：${hoverTasks.map((item) => `${item.majorCategory} · ${item.minorCategory}`).join(" / ")}`,
-              ...hoverTasks.map(
-                (item) =>
-                  `起始时间：${item.originalStart}`
-              )
-            ]
-          : [];
-        const hoverDetail = hoverTasks.length
-          ? {
-              type: "event",
-              title: hoverTasks.length > 1 ? "交叉事务" : (activeTask ?? hoverTasks[0]).label,
-              lines: [
-                `重复：${repeatTypeLabel((activeTask ?? hoverTasks[0]).repeatType)}${
-                  (activeTask ?? hoverTasks[0]).repeatUntil ? ` · 至 ${(activeTask ?? hoverTasks[0]).repeatUntil}` : ""
-                }`,
-                ...hoverLines,
-                (activeTask ?? hoverTasks[0]).note || "无备注"
-              ],
-              editTarget:
-                isCreator && hoverTasks.length === 1 ? { entity: "event", id: hoverTasks[0].sourceId } : null
-            }
-          : null;
 
         return (
           <div
             key={`${day.key}-${hour}`}
             className={`timeline-cell ${isPast ? "past" : ""} ${isToday ? "today" : ""} ${isCurrent ? "current" : ""}`}
-            onMouseEnter={hoverDetail ? (event) => onHover(event, hoverDetail) : undefined}
-            onMouseMove={hoverDetail ? onHoverMove : undefined}
-            onMouseLeave={hoverDetail ? onHoverEnd : undefined}
           >
-            {overlapSegments.map((segment) => (
-              <div
-                key={segment.key}
-                className="timeline-overlap-segment"
-                style={{
-                  top: `${segment.topPx}px`,
-                  height: `${segment.heightPx}px`,
-                  background: segment.color
-                }}
-              />
-            ))}
             {activeDailyTask && (
               <div
                 className="timeline-repeat-fill"
@@ -4813,7 +4813,19 @@ function FragmentRow({ hour, days, currentHour, taskRows, isCreator, onHover, on
                   background: `color-mix(in srgb, ${activeDailyTask.color} 72%, transparent 28%)`
                 }}
                 onMouseEnter={(event) =>
-                  hoverDetail ? onHover(event, hoverDetail) : undefined
+                  onHover(event, {
+                    type: "event",
+                    title: activeDailyTask.label,
+                    lines: [
+                      `重复：${repeatTypeLabel(activeDailyTask.repeatType)}${
+                        activeDailyTask.repeatUntil ? ` · 至 ${activeDailyTask.repeatUntil}` : ""
+                      }`,
+                      `事务分类：${activeDailyTask.majorCategory} · ${activeDailyTask.minorCategory}`,
+                      `起始时间：${activeDailyTask.originalStart}`,
+                      activeDailyTask.note || "无备注"
+                    ],
+                    editTarget: isCreator ? { entity: "event", id: activeDailyTask.sourceId } : null
+                  })
                 }
                 onMouseMove={onHoverMove}
                 onMouseLeave={onHoverEnd}
@@ -4823,25 +4835,53 @@ function FragmentRow({ hour, days, currentHour, taskRows, isCreator, onHover, on
                 )}
               </div>
             )}
-            {task && (
+            {timelineSegments.map((segment) => {
+              const segmentHoverDetail = {
+                type: "event",
+                title: segment.isOverlap ? "交叉事务" : segment.label,
+                lines: [
+                  `事务分类：${segment.tasks.map((item) => `${item.majorCategory} · ${item.minorCategory}`).join(" / ")}`,
+                  ...segment.tasks.map((item) => `起始时间：${item.originalStart}`),
+                  segment.tasks.map((item) => item.note).filter(Boolean).join(" / ") || "无备注"
+                ],
+                editTarget:
+                  isCreator && segment.tasks.length === 1
+                    ? { entity: "event", id: segment.tasks[0].sourceId }
+                    : null
+              };
+
+              return (
               <div
-                className={`timeline-task ${task.tone}`}
+                key={segment.key}
+                className={`timeline-task ${segment.isOverlap ? "overlap" : (segment.tasks[0]?.tone ?? "mix")}`}
                 style={{
-                  top: `${((task.startMinuteInDay % 60) / 60) * timelineRowHeight + 1}px`,
-                  height: `${Math.max(8, (getTaskDurationMinutes(task) / 60) * timelineRowHeight - 2)}px`,
-                  "--event-color": task.color,
+                  top: `${segment.topPx}px`,
+                  height: `${Math.max(6, segment.heightPx)}px`,
+                  "--event-color": segment.tasks[0]?.color ?? "rgb(186, 222, 255)",
                   "--event-opacity": eventOpacity,
-                  background: `color-mix(in srgb, ${task.color} 82%, white 18%)`
+                  background: segment.isOverlap
+                    ? `linear-gradient(180deg, rgba(255, 255, 255, 0.24), rgba(255, 255, 255, 0.08)),
+                       repeating-linear-gradient(135deg, ${segment.tasks
+                         .map((item, index) => `${item.color} ${index * 10}px ${(index + 1) * 10}px`)
+                         .join(", ")})`
+                    : `color-mix(in srgb, ${segment.tasks[0]?.color ?? "rgb(186, 222, 255)"} 82%, white 18%)`
                 }}
-                onMouseEnter={(event) =>
-                  hoverDetail ? onHover(event, hoverDetail) : undefined
-                }
+                onMouseEnter={(event) => onHover(event, segmentHoverDetail)}
                 onMouseMove={onHoverMove}
                 onMouseLeave={onHoverEnd}
               >
-                {task.label}
+                <span
+                  className="timeline-task-text"
+                  style={{
+                    fontSize: `${segment.fontSize}px`,
+                    transform: `scaleX(${segment.scaleX})`
+                  }}
+                >
+                  {segment.label}
+                </span>
               </div>
-            )}
+              );
+            })}
           </div>
         );
       })}
