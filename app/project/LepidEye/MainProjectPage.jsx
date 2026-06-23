@@ -3126,14 +3126,14 @@ export default function MainProjectPage({ projects, bootstrap, editorKey, viewer
         .viewer-badge {
           position: absolute;
           top: -14px;
-          left: 18px;
-          transform: none;
+          left: calc(22px + ((100% - 44px) / 2));
+          transform: translateX(-50%);
           z-index: 2;
           display: inline-flex;
           align-items: center;
-          justify-content: flex-start;
+          justify-content: center;
           gap: 8px;
-          max-width: min(82%, 220px);
+          max-width: min(calc(100% - 64px), 220px);
           min-width: 128px;
           padding: 6px 12px 7px;
           border-radius: 999px;
@@ -4671,13 +4671,7 @@ export default function MainProjectPage({ projects, bootstrap, editorKey, viewer
           }
 
           .viewer-badge {
-            left: 14px;
-            max-width: calc(100% - 28px);
-          }
-
-          .access-core {
-            min-width: 0;
-            width: 100%;
+            max-width: calc(100% - 64px);
           }
 
           .lepid-eye-dialog {
