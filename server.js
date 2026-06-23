@@ -4,6 +4,7 @@ const next = require("next");
 const { Server } = require("socket.io");
 const express = require("express");
 const socketHandler = require("./server/state/socketHandler");
+const { initLepidEyeDatabase } = require("./server/lepidEye/store");
 
 const dev = process.env.NODE_ENV !== "production";
 const app = next({ dev });
@@ -13,6 +14,8 @@ app.prepare().then(() => {
   const server = express();
   const httpServer = createServer(server);
   const io = new Server(httpServer);
+
+  initLepidEyeDatabase();
 
   // 初始化 Socket.io 逻辑 (包含管理员烧录)
   socketHandler(io);

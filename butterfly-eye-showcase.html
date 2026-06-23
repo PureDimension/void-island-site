@@ -1,0 +1,1769 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>蝶眼系统设计展示页</title>
+  <style>
+    @font-face {
+      font-family: "OPPOSANS";
+      src: url("./public/fonts/OPPOSans-R.ttf") format("truetype");
+      font-weight: 400;
+      font-display: swap;
+    }
+
+    @font-face {
+      font-family: "OPPOSANS";
+      src: url("./public/fonts/OPPOSans-H.ttf") format("truetype");
+      font-weight: 900;
+      font-display: swap;
+    }
+
+    :root {
+      --bg-1: #020303;
+      --bg-2: #0a0d0f;
+      --panel: rgba(7, 11, 14, 0.74);
+      --panel-strong: rgba(11, 18, 22, 0.9);
+      --border: rgba(255, 255, 255, 0.12);
+      --text: #f4f7fb;
+      --muted: rgba(244, 247, 251, 0.6);
+      --accent: #fdfefe;
+      --accent-soft: rgba(255, 255, 255, 0.2);
+      --accent-glow: rgba(255, 255, 255, 0.5);
+      --track-past: rgba(255, 255, 255, 0.2);
+      --track-future: rgba(255, 255, 255, 0.08);
+      --blank: rgba(120, 128, 138, 0.18);
+      --active-plan: rgba(248, 252, 255, 0.92);
+      --paused-plan: rgba(197, 207, 219, 0.65);
+      --ended-plan: rgba(127, 145, 162, 0.55);
+      --danger: #ecf0f6;
+      --shadow: 0 24px 60px rgba(0, 0, 0, 0.35);
+    }
+
+    body.light-mode {
+      --bg-1: #e4e8ea;
+      --bg-2: #cdd4d8;
+      --panel: rgba(250, 252, 255, 0.72);
+      --panel-strong: rgba(244, 247, 250, 0.92);
+      --border: rgba(0, 0, 0, 0.08);
+      --text: #091118;
+      --muted: rgba(9, 17, 24, 0.52);
+      --accent: #061017;
+      --accent-soft: rgba(0, 0, 0, 0.16);
+      --accent-glow: rgba(0, 0, 0, 0.38);
+      --track-past: rgba(15, 24, 33, 0.18);
+      --track-future: rgba(15, 24, 33, 0.07);
+      --blank: rgba(90, 102, 112, 0.13);
+      --active-plan: rgba(16, 24, 34, 0.92);
+      --paused-plan: rgba(63, 76, 90, 0.66);
+      --ended-plan: rgba(113, 127, 143, 0.5);
+      --shadow: 0 24px 60px rgba(31, 45, 59, 0.12);
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    html, body {
+      margin: 0;
+      min-height: 100%;
+      overflow-x: auto;
+      background:
+        radial-gradient(circle at 12% 18%, rgba(255, 255, 255, 0.08), transparent 24%),
+        radial-gradient(circle at 82% 22%, rgba(255, 255, 255, 0.04), transparent 28%),
+        linear-gradient(135deg, var(--bg-1), var(--bg-2));
+      color: var(--text);
+      font-family: "OPPOSANS", Arial, sans-serif;
+    }
+
+    #butterfly-canvas {
+      position: fixed;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      z-index: 0;
+      pointer-events: none;
+      animation: butterflyCanvasGlow 3.8s ease-in-out infinite;
+      filter: brightness(1.08) saturate(1.04) drop-shadow(0 0 16px rgba(255, 255, 255, 0.16));
+    }
+
+    @keyframes butterflyCanvasGlow {
+      0%, 100% {
+        filter: brightness(1.02) saturate(1.02) drop-shadow(0 0 10px rgba(255, 255, 255, 0.12));
+      }
+      45% {
+        filter: brightness(1.16) saturate(1.08) drop-shadow(0 0 22px rgba(255, 255, 255, 0.22));
+      }
+      70% {
+        filter: brightness(1.12) saturate(1.06) drop-shadow(0 0 18px rgba(255, 255, 255, 0.2));
+      }
+    }
+
+    .shell {
+      position: relative;
+      z-index: 1;
+      display: grid;
+      grid-template-columns: 290px minmax(0, 1fr);
+      grid-template-rows: auto auto auto;
+      gap: 18px;
+      min-height: 100vh;
+      min-width: 1210px;
+      padding: 22px;
+      padding-bottom: 70px;
+      width: max(100%, 1210px);
+    }
+
+    .panel {
+      position: relative;
+      overflow: hidden;
+      border: 1px solid var(--border);
+      border-radius: 26px;
+      background: linear-gradient(160deg, var(--panel-strong), var(--panel));
+      backdrop-filter: blur(18px);
+      box-shadow: var(--shadow);
+    }
+
+    .panel::before {
+      content: "";
+      position: absolute;
+      inset: 0;
+      background:
+        linear-gradient(180deg, rgba(255, 255, 255, 0.06), transparent 30%),
+        linear-gradient(135deg, transparent 0%, rgba(255, 255, 255, 0.04) 55%, transparent 100%);
+      pointer-events: none;
+    }
+
+    .meta-panel {
+      grid-column: 1;
+      grid-row: 1;
+      padding: 22px 20px 18px;
+    }
+
+    .timeline-panel {
+      grid-column: 2;
+      grid-row: 1;
+      padding: 18px 18px 16px;
+      min-width: 0;
+    }
+
+    .plan-panel {
+      grid-column: 1 / span 2;
+      grid-row: 2;
+      padding: 18px 18px 16px;
+      min-width: 0;
+    }
+
+    .bottom-row {
+      grid-column: 1 / span 2;
+      grid-row: 3;
+      display: grid;
+      grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr);
+      align-items: stretch;
+      gap: 18px;
+      min-width: 0;
+    }
+
+    .stats-panel,
+    .ai-panel {
+      padding: 18px;
+      display: flex;
+      flex-direction: column;
+    }
+
+    .top-tools {
+      position: absolute;
+      top: 18px;
+      right: 20px;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      z-index: 3;
+    }
+
+    .tool-btn, .select-shell {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      height: 42px;
+      padding: 0 16px;
+      border: 1px solid var(--border);
+      border-radius: 999px;
+      background: rgba(255, 255, 255, 0.06);
+      color: var(--text);
+      font-size: 13px;
+      letter-spacing: 0.06em;
+      cursor: pointer;
+      transition: transform 0.18s ease, background 0.18s ease, border-color 0.18s ease;
+    }
+
+    .tool-btn:hover, .select-shell:hover {
+      transform: translateY(-1px);
+      background: rgba(255, 255, 255, 0.1);
+      border-color: rgba(255, 255, 255, 0.22);
+    }
+
+    .tool-btn svg {
+      width: 15px;
+      height: 15px;
+      opacity: 0.9;
+    }
+
+    .select-shell select {
+      appearance: none;
+      border: 0;
+      background: transparent;
+      color: var(--text);
+      font: inherit;
+      outline: none;
+      cursor: pointer;
+      padding-right: 8px;
+    }
+
+    .panel-title {
+      display: flex;
+      align-items: baseline;
+      justify-content: space-between;
+      gap: 12px;
+      margin-bottom: 14px;
+    }
+
+    .panel-title h2 {
+      margin: 0;
+      font-size: 22px;
+      font-weight: 900;
+      letter-spacing: 0.08em;
+    }
+
+    .panel-title span {
+      color: var(--muted);
+      font-size: 12px;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+    }
+
+    .eyebrow {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      color: var(--muted);
+      font-size: 11px;
+      letter-spacing: 0.24em;
+      text-transform: uppercase;
+    }
+
+    .eyebrow::before {
+      content: "";
+      width: 18px;
+      height: 1px;
+      background: currentColor;
+      opacity: 0.7;
+    }
+
+    .meta-panel h1 {
+      margin: 18px 0 10px;
+      font-size: 34px;
+      line-height: 1.04;
+      font-weight: 900;
+      letter-spacing: 0.06em;
+    }
+
+    .meta-panel p {
+      margin: 0 0 16px;
+      color: var(--muted);
+      font-size: 14px;
+      line-height: 1.72;
+    }
+
+    .notice-list {
+      display: grid;
+      gap: 10px;
+      margin-top: 20px;
+    }
+
+    .notice-item {
+      padding: 12px 14px;
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      border-radius: 16px;
+      background: rgba(255, 255, 255, 0.035);
+    }
+
+    .notice-item strong {
+      display: block;
+      margin-bottom: 6px;
+      font-size: 13px;
+      letter-spacing: 0.08em;
+    }
+
+    .notice-item span {
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.5;
+    }
+
+    .timeline-grid-shell,
+    .plan-grid-shell {
+      border-radius: 22px;
+      overflow: hidden;
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      background: rgba(255, 255, 255, 0.025);
+    }
+
+    .timeline-viewport {
+      position: relative;
+    }
+
+    .timeline-inner {
+      width: max-content;
+    }
+
+    .plan-inner {
+      width: max(100%, 1400px);
+    }
+
+    .timeline-header,
+    .plan-header {
+      display: grid;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.07);
+      background: rgba(255, 255, 255, 0.03);
+      position: sticky;
+      top: 0;
+      z-index: 2;
+      backdrop-filter: blur(16px);
+    }
+
+    .plan-header {
+      grid-template-columns: 180px repeat(10, minmax(112px, 1fr));
+    }
+
+    .head-cell {
+      padding: 12px 8px;
+      border-right: 1px solid rgba(255, 255, 255, 0.05);
+      font-size: 12px;
+      line-height: 1.35;
+      min-width: 0;
+    }
+
+    .head-cell strong {
+      display: block;
+      margin-bottom: 3px;
+      font-size: 13px;
+      letter-spacing: 0.06em;
+    }
+
+    .head-cell span {
+      color: var(--muted);
+    }
+
+    .timeline-scroll,
+    .plan-scroll {
+      position: relative;
+      overflow-y: auto;
+      overflow-x: scroll;
+      padding-bottom: 10px;
+      scrollbar-width: thin;
+      scrollbar-color: rgba(255, 255, 255, 0.38) rgba(255, 255, 255, 0.05);
+      cursor: grab;
+    }
+
+    .timeline-scroll {
+      height: min(52vh, 520px);
+    }
+
+    .plan-scroll {
+      height: auto;
+    }
+
+    .timeline-scroll.dragging,
+    .plan-scroll.dragging {
+      cursor: grabbing;
+      user-select: none;
+    }
+
+    .timeline-scroll::-webkit-scrollbar,
+    .plan-scroll::-webkit-scrollbar {
+      height: 12px;
+      width: 12px;
+    }
+
+    .timeline-scroll::-webkit-scrollbar-track,
+    .plan-scroll::-webkit-scrollbar-track {
+      background: rgba(255, 255, 255, 0.05);
+      border-radius: 999px;
+    }
+
+    .timeline-scroll::-webkit-scrollbar-thumb,
+    .plan-scroll::-webkit-scrollbar-thumb {
+      background: linear-gradient(180deg, rgba(255, 255, 255, 0.48), rgba(255, 255, 255, 0.22));
+      border-radius: 999px;
+      border: 2px solid rgba(0, 0, 0, 0);
+      background-clip: padding-box;
+      box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.16);
+    }
+
+    body.light-mode .timeline-scroll::-webkit-scrollbar-track,
+    body.light-mode .plan-scroll::-webkit-scrollbar-track {
+      background: rgba(0, 0, 0, 0.08);
+    }
+
+    body.light-mode .timeline-scroll::-webkit-scrollbar-thumb,
+    body.light-mode .plan-scroll::-webkit-scrollbar-thumb {
+      background: linear-gradient(180deg, rgba(8, 16, 23, 0.76), rgba(8, 16, 23, 0.42));
+      box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.1);
+    }
+
+    .timeline-grid {
+      display: grid;
+      width: max-content;
+    }
+
+    .plan-grid {
+      display: grid;
+      grid-template-columns: 180px repeat(10, minmax(112px, 1fr));
+      width: 100%;
+    }
+
+    .time-cell,
+    .track-cell {
+      min-height: 34px;
+      border-right: 1px solid rgba(255, 255, 255, 0.04);
+      border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+      background: var(--blank);
+      position: relative;
+    }
+
+    .time-label {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 0 6px;
+      font-size: 11px;
+      color: var(--muted);
+      border-right: 1px solid rgba(255, 255, 255, 0.05);
+      border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+      background: rgba(255, 255, 255, 0.015);
+      white-space: nowrap;
+      position: sticky;
+      left: 0;
+      z-index: 1;
+    }
+
+    .timeline-header .head-cell:first-child {
+      position: sticky;
+      left: 0;
+      z-index: 3;
+      background: rgba(12, 18, 22, 0.92);
+    }
+
+    body.light-mode .timeline-header .head-cell:first-child {
+      background: rgba(244, 247, 250, 0.95);
+    }
+
+    .timeline-pin {
+      position: absolute;
+      top: 0;
+      bottom: 10px;
+      left: 0;
+      width: 112px;
+      pointer-events: none;
+      z-index: 4;
+    }
+
+    .timeline-pin::after {
+      content: "";
+      position: absolute;
+      top: 52px;
+      bottom: 0;
+      left: 50%;
+      width: 1px;
+      transform: translateX(-50%);
+      background: linear-gradient(180deg, rgba(255, 255, 255, 0.55), rgba(255, 255, 255, 0.14));
+      box-shadow: 0 0 16px rgba(255, 255, 255, 0.24);
+    }
+
+    .timeline-pin-label {
+      position: absolute;
+      top: 10px;
+      left: 50%;
+      transform: translateX(-50%);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 2px;
+      min-width: 94px;
+      padding: 8px 10px;
+      border-radius: 16px;
+      border: 1px solid rgba(255, 255, 255, 0.14);
+      background: rgba(8, 12, 15, 0.88);
+      box-shadow: 0 0 26px rgba(255, 255, 255, 0.08);
+    }
+
+    body.light-mode .timeline-pin-label {
+      background: rgba(246, 249, 251, 0.92);
+    }
+
+    body.light-mode .timeline-pin::after {
+      background: linear-gradient(180deg, rgba(0, 0, 0, 0.72), rgba(0, 0, 0, 0.18));
+      box-shadow: 0 0 18px rgba(0, 0, 0, 0.2);
+    }
+
+    .timeline-pin-label strong {
+      font-size: 13px;
+      letter-spacing: 0.08em;
+    }
+
+    .timeline-pin-label span {
+      font-size: 10px;
+      color: var(--muted);
+      letter-spacing: 0.14em;
+      text-transform: uppercase;
+    }
+
+    .past {
+      background: var(--track-past);
+    }
+
+    .future {
+      background: var(--track-future);
+    }
+
+    .task-block {
+      position: absolute;
+      inset: 1px 2px;
+      border-radius: 8px;
+      background: linear-gradient(180deg, rgba(255, 255, 255, 0.32), rgba(255, 255, 255, 0.14));
+      box-shadow: 0 0 20px rgba(255, 255, 255, 0.14);
+      overflow: hidden;
+    }
+
+    .task-block.deep {
+      background: linear-gradient(180deg, rgba(255, 255, 255, 0.54), rgba(255, 255, 255, 0.2));
+    }
+
+    .task-block.mix::after {
+      content: "";
+      position: absolute;
+      inset: 0;
+      background: repeating-linear-gradient(
+        135deg,
+        rgba(255, 255, 255, 0.2) 0 8px,
+        rgba(255, 255, 255, 0.06) 8px 16px
+      );
+      opacity: 0.7;
+    }
+
+    .task-tag {
+      position: absolute;
+      left: 8px;
+      top: 5px;
+      font-size: 10px;
+      font-weight: 900;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+
+    .timeline-legend,
+    .plan-legend {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 12px;
+      margin-top: 12px;
+      color: var(--muted);
+      font-size: 11px;
+      letter-spacing: 0.08em;
+    }
+
+    .legend-item {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .legend-dot {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      background: rgba(255, 255, 255, 0.75);
+      box-shadow: 0 0 14px rgba(255, 255, 255, 0.25);
+    }
+
+    .legend-line {
+      width: 16px;
+      height: 2px;
+      background: rgba(255, 255, 255, 0.8);
+    }
+
+    .legend-line.dashed {
+      background: none;
+      border-top: 2px dashed rgba(255, 255, 255, 0.55);
+      height: 0;
+    }
+
+    .plan-controls {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .scale-btn {
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      background: rgba(255, 255, 255, 0.035);
+      color: var(--muted);
+      border-radius: 999px;
+      padding: 7px 12px;
+      font-size: 11px;
+      letter-spacing: 0.1em;
+      cursor: pointer;
+    }
+
+    .scale-btn.active {
+      color: var(--text);
+      background: rgba(255, 255, 255, 0.12);
+      border-color: rgba(255, 255, 255, 0.18);
+    }
+
+    .plan-row-label {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 0 14px;
+      border-right: 1px solid rgba(255, 255, 255, 0.06);
+      border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+      background: rgba(255, 255, 255, 0.015);
+      min-height: 42px;
+    }
+
+    .plan-badge {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      flex-shrink: 0;
+    }
+
+    .plan-badge.active {
+      background: var(--active-plan);
+      box-shadow: 0 0 16px rgba(255, 255, 255, 0.38);
+    }
+
+    .plan-badge.paused {
+      background: var(--paused-plan);
+    }
+
+    .plan-badge.ended {
+      background: var(--ended-plan);
+    }
+
+    .plan-row-label strong {
+      display: block;
+      font-size: 12px;
+      letter-spacing: 0.06em;
+    }
+
+    .plan-row-label span {
+      display: block;
+      color: var(--muted);
+      font-size: 10px;
+      margin-top: 2px;
+      letter-spacing: 0.08em;
+    }
+
+    .track-lane {
+      position: relative;
+      min-height: 42px;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+      background: rgba(255, 255, 255, 0.015);
+    }
+
+    .track-bar {
+      position: absolute;
+      top: 19px;
+      height: 4px;
+      border-radius: 999px;
+      background: var(--active-plan);
+      box-shadow: 0 0 14px rgba(255, 255, 255, 0.3);
+    }
+
+    .track-bar.paused {
+      background: none;
+      border-top: 3px dashed var(--paused-plan);
+      box-shadow: none;
+      height: 0;
+      top: 20px;
+    }
+
+    .track-bar.ended {
+      background: var(--ended-plan);
+      opacity: 0.75;
+      box-shadow: none;
+    }
+
+    .track-node {
+      position: absolute;
+      top: 14px;
+      width: 14px;
+      height: 14px;
+      border-radius: 50%;
+      border: 2px solid rgba(255, 255, 255, 0.9);
+      background: rgba(255, 255, 255, 0.12);
+      box-shadow: 0 0 14px rgba(255, 255, 255, 0.18);
+    }
+
+    .track-node.filled {
+      background: rgba(255, 255, 255, 0.96);
+    }
+
+    .stats-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 16px;
+      min-height: 300px;
+      flex: 1;
+      width: 100%;
+    }
+
+    .stats-card,
+    .ai-card {
+      border-radius: 20px;
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      background: rgba(255, 255, 255, 0.03);
+      padding: 16px;
+    }
+
+    .stats-card h3,
+    .ai-card h3 {
+      margin: 0 0 10px;
+      font-size: 14px;
+      letter-spacing: 0.12em;
+    }
+
+    .pie-shell {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 150px;
+    }
+
+    .pie {
+      width: 132px;
+      height: 132px;
+      border-radius: 50%;
+      background:
+        conic-gradient(
+          rgba(255, 255, 255, 0.88) 0 31%,
+          rgba(255, 255, 255, 0.58) 31% 58%,
+          rgba(255, 255, 255, 0.35) 58% 74%,
+          rgba(255, 255, 255, 0.18) 74% 100%
+        );
+      box-shadow: inset 0 0 0 18px rgba(5, 10, 14, 0.82), 0 0 20px rgba(255, 255, 255, 0.12);
+      position: relative;
+    }
+
+    body.light-mode .pie {
+      box-shadow: inset 0 0 0 18px rgba(230, 235, 239, 0.9), 0 0 20px rgba(0, 0, 0, 0.08);
+    }
+
+    .pie::after {
+      content: "事务\n占比";
+      position: absolute;
+      inset: 32px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      white-space: pre;
+      text-align: center;
+      font-size: 12px;
+      line-height: 1.55;
+      letter-spacing: 0.16em;
+      color: var(--text);
+    }
+
+    .micro-list {
+      display: grid;
+      gap: 8px;
+      margin-top: 12px;
+      color: var(--muted);
+      font-size: 11px;
+    }
+
+    .micro-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      padding-bottom: 6px;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+    }
+
+    .macro-table {
+      display: grid;
+      gap: 10px;
+    }
+
+    .macro-entry {
+      display: grid;
+      grid-template-columns: 72px 1fr 44px;
+      align-items: center;
+      gap: 10px;
+      font-size: 11px;
+      color: var(--muted);
+    }
+
+    .macro-bar {
+      height: 10px;
+      border-radius: 999px;
+      background: rgba(255, 255, 255, 0.08);
+      overflow: hidden;
+    }
+
+    .macro-fill {
+      height: 100%;
+      border-radius: inherit;
+      background: linear-gradient(90deg, rgba(255, 255, 255, 0.86), rgba(255, 255, 255, 0.38));
+    }
+
+    .ai-grid {
+      display: flex;
+      flex: 1;
+      min-height: 300px;
+    }
+
+    .ai-card {
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      min-height: 100%;
+      width: 100%;
+    }
+
+    .ai-textbox {
+      flex: 1;
+      width: 100%;
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      border-radius: 20px;
+      background: rgba(255, 255, 255, 0.03);
+      color: var(--text);
+      font: inherit;
+      font-size: 13px;
+      line-height: 1.75;
+      padding: 18px;
+      resize: none;
+      outline: none;
+    }
+
+    .ai-textbox::placeholder {
+      color: var(--muted);
+    }
+
+    .ai-card p {
+      margin: 0;
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.7;
+    }
+
+    .ai-card .status {
+      display: inline-flex;
+      width: fit-content;
+      padding: 5px 10px;
+      border-radius: 999px;
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      color: var(--muted);
+      font-size: 10px;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+    }
+
+    .floating-caption {
+      position: absolute;
+      left: 50%;
+      bottom: 18px;
+      transform: translateX(-50%);
+      color: var(--muted);
+      font-size: 11px;
+      letter-spacing: 0.22em;
+      text-transform: uppercase;
+      z-index: 2;
+    }
+
+    @media (max-width: 1100px) {
+      .head-cell {
+        padding: 10px 6px;
+      }
+
+      .head-cell strong {
+        font-size: 12px;
+      }
+
+      .head-cell span {
+        font-size: 10px;
+      }
+
+      .plan-grid {
+        width: 1400px;
+      }
+
+      .timeline-inner {
+        width: max-content;
+      }
+
+      .plan-inner {
+        width: 1400px;
+      }
+
+      .bottom-row {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    @media ((max-width: 768px) and (pointer: coarse)), (max-width: 640px) {
+      html, body {
+        overflow-x: hidden;
+      }
+
+      .top-tools {
+        position: sticky;
+        top: 12px;
+        right: auto;
+        justify-content: flex-end;
+        width: 100%;
+        padding: 0 16px;
+      }
+
+      .tool-btn, .select-shell {
+        height: 38px;
+        padding: 0 12px;
+        font-size: 12px;
+      }
+
+      .shell {
+        display: flex;
+        flex-direction: column;
+        gap: 16px;
+        min-width: 0;
+        width: 100%;
+        padding: 72px 16px 40px;
+      }
+
+      .meta-panel,
+      .timeline-panel,
+      .plan-panel,
+      .bottom-row {
+        grid-column: auto;
+        grid-row: auto;
+        width: 100%;
+      }
+
+      .bottom-row {
+        display: flex;
+        flex-direction: column;
+      }
+
+      .panel {
+        border-radius: 22px;
+      }
+
+      .panel-title {
+        flex-direction: column;
+        align-items: flex-start;
+      }
+
+      .meta-panel h1 {
+        font-size: 30px;
+      }
+
+      .timeline-scroll {
+        height: 46vh;
+      }
+
+      .timeline-pin {
+        width: 96px;
+      }
+
+      .timeline-pin-label {
+        min-width: 82px;
+        padding: 7px 8px;
+      }
+
+      .plan-controls {
+        flex-wrap: wrap;
+      }
+
+      .stats-grid {
+        grid-template-columns: 1fr;
+      }
+
+      .ai-grid {
+        min-height: 220px;
+      }
+
+      .ai-textbox {
+        min-height: 220px;
+      }
+    }
+  </style>
+</head>
+<body>
+  <canvas id="butterfly-canvas"></canvas>
+
+  <div class="top-tools">
+    <button class="tool-btn" type="button" aria-label="返回">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+        <path d="M15 5l-7 7 7 7"></path>
+      </svg>
+      返回主站
+    </button>
+    <button class="tool-btn" id="theme-toggle" type="button" aria-label="切换昼夜">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+        <path d="M12 3v2.5M12 18.5V21M4.9 4.9l1.8 1.8M17.3 17.3l1.8 1.8M3 12h2.5M18.5 12H21M4.9 19.1l1.8-1.8M17.3 6.7l1.8-1.8"></path>
+        <circle cx="12" cy="12" r="4.2"></circle>
+      </svg>
+      切换昼夜
+    </button>
+  </div>
+
+  <main class="shell">
+    <section class="panel meta-panel">
+      <div class="eyebrow">Butterfly Eye</div>
+      <h1>蝶眼系统</h1>
+      <p>
+        这是一个围绕“计划、事务、状态、开销与分析”展开的自我监控界面。视觉上强调夜色下的白蝶、
+        轨道式规划与被观察感，像一双持续扫过时间的眼睛。
+      </p>
+
+      <div class="notice-list">
+        <div class="notice-item">
+          <strong>系统公告</strong>
+          <span>本展示页仅为桌面版概念设计，重点验证布局密度、时间轴语义与背景动效。</span>
+        </div>
+        <div class="notice-item">
+          <strong>模式说明</strong>
+          <span>未来可区分公开观察视图与自我管理视图。前者偏展示，后者偏录入和分析。</span>
+        </div>
+        <div class="notice-item">
+          <strong>观察提示</strong>
+          <span>背景蝴蝶保持缓慢漂移。暗色中更像白蝶，亮色中则更像黑瞳里的白色高光蝴蝶。</span>
+        </div>
+      </div>
+    </section>
+
+    <section class="panel timeline-panel">
+      <div class="panel-title">
+        <div>
+          <h2>事务规划时间轴</h2>
+          <span>日期横轴 / 24 小时纵轴 / 已过时间加深</span>
+        </div>
+      </div>
+
+      <div class="timeline-grid-shell">
+        <div class="timeline-viewport">
+          <div class="timeline-scroll" id="timeline-scroll">
+            <div class="timeline-inner">
+              <div class="timeline-header" id="timeline-header"></div>
+              <div class="timeline-grid" id="timeline-grid"></div>
+            </div>
+          </div>
+          <div class="timeline-pin" aria-hidden="true">
+            <div class="timeline-pin-label">
+              <strong>06/18</strong>
+              <span>today</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="timeline-legend">
+        <div class="legend-item"><span class="legend-dot"></span>紧急事务</div>
+        <div class="legend-item"><span class="legend-dot" style="opacity:.55"></span>非紧急事务</div>
+        <div class="legend-item"><span class="legend-line"></span>混合记录可折半统计</div>
+        <div class="legend-item"><span class="legend-line" style="background:rgba(255,255,255,.25)"></span>灰色为空白未记录时段</div>
+      </div>
+    </section>
+
+    <section class="panel plan-panel">
+      <div class="panel-title">
+        <div>
+          <h2>计划轨道总览</h2>
+          <span>按进行中 / 非活跃 / 已结束排序，支持周月年缩放</span>
+        </div>
+        <div class="plan-controls">
+          <button class="scale-btn active" type="button">周</button>
+          <button class="scale-btn" type="button">月</button>
+          <button class="scale-btn" type="button">年</button>
+          <label class="select-shell">
+            <select>
+              <option>总计划表</option>
+              <option>学业规划表</option>
+              <option>项目推进表</option>
+              <option>生活管理表</option>
+            </select>
+          </label>
+        </div>
+      </div>
+
+      <div class="plan-grid-shell">
+        <div class="plan-scroll">
+          <div class="plan-inner">
+            <div class="plan-header">
+              <div class="head-cell"><strong>计划条目</strong><span>可点击切换状态</span></div>
+              <div class="head-cell"><strong>03/30</strong><span>起点</span></div>
+              <div class="head-cell"><strong>04/15</strong><span></span></div>
+              <div class="head-cell"><strong>05/01</strong><span></span></div>
+              <div class="head-cell"><strong>05/17</strong><span></span></div>
+              <div class="head-cell"><strong>06/01</strong><span></span></div>
+              <div class="head-cell"><strong>06/08</strong><span></span></div>
+              <div class="head-cell"><strong>06/12</strong><span></span></div>
+              <div class="head-cell"><strong>06/15</strong><span></span></div>
+              <div class="head-cell"><strong>06/18</strong><span>today</span></div>
+              <div class="head-cell"><strong>06/24</strong><span>未来</span></div>
+            </div>
+            <div class="plan-grid" id="plan-grid"></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="plan-legend">
+        <div class="legend-item"><span class="legend-dot"></span>激活中</div>
+        <div class="legend-item"><span class="legend-line dashed"></span>非活跃 / 重新启用中断段</div>
+        <div class="legend-item"><span class="legend-line" style="background:rgba(190,204,220,.72)"></span>已结束轨道</div>
+      </div>
+    </section>
+
+    <div class="bottom-row">
+      <section class="panel stats-panel">
+        <div class="panel-title">
+          <div>
+            <h2>统计</h2>
+            <span>周期切换 / 事务占比 / 完成情况</span>
+          </div>
+          <div class="plan-controls">
+            <button class="scale-btn active" type="button">一周</button>
+            <button class="scale-btn" type="button">一月</button>
+          </div>
+        </div>
+
+        <div class="stats-grid">
+          <div class="stats-card">
+            <h3>事务占比</h3>
+            <div class="pie-shell">
+              <div class="pie"></div>
+            </div>
+            <div class="micro-list">
+              <div class="micro-row"><span>项目推进</span><strong>31%</strong></div>
+              <div class="micro-row"><span>学业事务</span><strong>27%</strong></div>
+              <div class="micro-row"><span>生活维护</span><strong>16%</strong></div>
+              <div class="micro-row"><span>空白/无记录</span><strong>26%</strong></div>
+            </div>
+          </div>
+
+          <div class="stats-card">
+            <h3>计划完成情况</h3>
+            <div class="macro-table">
+              <div class="macro-entry">
+                <span>长期主线</span>
+                <div class="macro-bar"><div class="macro-fill" style="width:72%"></div></div>
+                <strong>72</strong>
+              </div>
+              <div class="macro-entry">
+                <span>学业收束</span>
+                <div class="macro-bar"><div class="macro-fill" style="width:48%"></div></div>
+                <strong>48</strong>
+              </div>
+              <div class="macro-entry">
+                <span>蝶眼系统</span>
+                <div class="macro-bar"><div class="macro-fill" style="width:21%"></div></div>
+                <strong>21</strong>
+              </div>
+              <div class="macro-entry">
+                <span>生活预算</span>
+                <div class="macro-bar"><div class="macro-fill" style="width:67%"></div></div>
+                <strong>67</strong>
+              </div>
+              <div class="macro-entry">
+                <span>日常恢复</span>
+                <div class="macro-bar"><div class="macro-fill" style="width:54%"></div></div>
+                <strong>54</strong>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="panel ai-panel">
+        <div class="panel-title">
+          <div>
+            <h2>AI 分析</h2>
+            <span>暂未启用 / 预留单文本框反馈区域</span>
+          </div>
+        </div>
+
+        <div class="ai-grid">
+          <textarea class="ai-textbox" placeholder="未来这里可以直接放 AI 对当前周期的总结、计划偏移解释、事务密度分析，或者保留为你手动触发生成后的单段文本输出。"></textarea>
+        </div>
+      </section>
+    </div>
+  </main>
+
+  <div class="floating-caption">Butterflies drift like pupils, plans stretch like nerves.</div>
+
+  <script>
+    const timelineHeader = document.getElementById("timeline-header");
+    const timelineGrid = document.getElementById("timeline-grid");
+    const timelineScroll = document.getElementById("timeline-scroll");
+    const timelinePin = document.querySelector(".timeline-pin");
+    const planGrid = document.getElementById("plan-grid");
+    const planScroll = document.querySelector(".plan-scroll");
+    const toggle = document.getElementById("theme-toggle");
+
+    const todayHour = 15;
+    const timelineDayWidth = 112;
+    const timelineHourLabelWidth = 84;
+    const timelinePastDays = 365;
+    const timelineFutureDays = 365;
+    const timelineToday = new Date("2026-06-18T12:00:00+08:00");
+    const timelineTodayIndex = timelinePastDays;
+    const taskBlocks = [
+      { offset: -4, start: 9, end: 11, type: "deep", label: "会议" },
+      { offset: 0, start: 13, end: 17, type: "mix", label: "项目+学业" },
+      { offset: 0, start: 20, end: 22, type: "", label: "整理" },
+      { offset: 1, start: 10, end: 12, type: "", label: "写作" },
+      { offset: 3, start: 14, end: 18, type: "mix", label: "联调" },
+      { offset: 9, start: 8, end: 10, type: "deep", label: "汇报" },
+      { offset: 18, start: 19, end: 22, type: "", label: "蝶眼" },
+      { offset: 34, start: 9, end: 12, type: "", label: "整理" },
+      { offset: 62, start: 15, end: 18, type: "mix", label: "调研" },
+      { offset: 144, start: 11, end: 14, type: "deep", label: "会谈" },
+      { offset: -73, start: 18, end: 21, type: "", label: "复盘" },
+      { offset: -160, start: 7, end: 9, type: "deep", label: "答辩" },
+      { offset: 206, start: 10, end: 13, type: "", label: "出行" },
+      { offset: 328, start: 16, end: 20, type: "mix", label: "年末总结" }
+    ];
+
+    timelineHeader.style.gridTemplateColumns = `${timelineHourLabelWidth}px repeat(${timelinePastDays + timelineFutureDays + 1}, ${timelineDayWidth}px)`;
+    timelineGrid.style.gridTemplateColumns = `${timelineHourLabelWidth}px repeat(${timelinePastDays + timelineFutureDays + 1}, ${timelineDayWidth}px)`;
+
+    const timeHead = document.createElement("div");
+    timeHead.className = "head-cell";
+    timeHead.innerHTML = "<strong>北京时间</strong><span>Hour</span>";
+    timelineHeader.appendChild(timeHead);
+
+    for (let offset = -timelinePastDays; offset <= timelineFutureDays; offset++) {
+      const currentDate = new Date(timelineToday);
+      currentDate.setDate(timelineToday.getDate() + offset);
+      const month = String(currentDate.getMonth() + 1).padStart(2, "0");
+      const dayOfMonth = String(currentDate.getDate()).padStart(2, "0");
+      const weekDay = currentDate.toLocaleDateString("en-US", { weekday: "short" });
+      const head = document.createElement("div");
+      head.className = "head-cell";
+      head.innerHTML = `<strong>${month}/${dayOfMonth} ${weekDay}</strong><span>${offset === 0 ? "today" : offset < 0 ? "past" : "future"}</span>`;
+      timelineHeader.appendChild(head);
+    }
+
+    for (let hour = 0; hour < 24; hour++) {
+      const label = document.createElement("div");
+      label.className = "time-label";
+      label.textContent = String(hour).padStart(2, "0") + ":00";
+      timelineGrid.appendChild(label);
+
+      for (let offset = -timelinePastDays; offset <= timelineFutureDays; offset++) {
+        const cell = document.createElement("div");
+        cell.className = "time-cell";
+
+        if (offset < 0 || (offset === 0 && hour < todayHour)) {
+          cell.classList.add("past");
+        } else {
+          cell.classList.add("future");
+        }
+
+        const block = taskBlocks.find((item) => item.offset === offset && item.start === hour);
+        if (block) {
+          const span = block.end - block.start;
+          const task = document.createElement("div");
+          task.className = "task-block " + block.type;
+          task.style.height = `calc(${span * 34}px - 4px)`;
+          const tag = document.createElement("span");
+          tag.className = "task-tag";
+          tag.textContent = block.label;
+          task.appendChild(tag);
+          cell.appendChild(task);
+        }
+
+        timelineGrid.appendChild(cell);
+      }
+    }
+
+    function updateTimelinePinPosition() {
+      const todayCenter = timelineHourLabelWidth + timelineTodayIndex * timelineDayWidth + timelineDayWidth / 2;
+      timelinePin.style.left = `${todayCenter - timelineScroll.scrollLeft - timelineDayWidth / 2}px`;
+    }
+
+    function centerTimelineOnToday() {
+      const centerOffset = timelinePastDays * timelineDayWidth - (timelineScroll.clientWidth - timelineDayWidth) / 2 + timelineHourLabelWidth;
+      timelineScroll.scrollLeft = Math.max(centerOffset, 0);
+      updateTimelinePinPosition();
+    }
+
+    requestAnimationFrame(centerTimelineOnToday);
+
+    const plans = [
+      { title: "主线创业推进", group: "项目 / 核心", state: "active", start: 0, end: 8, resume: null },
+      { title: "蝶眼系统", group: "项目 / 自用工具", state: "active", start: 5, end: 8, resume: null },
+      { title: "学期收束", group: "学业 / 当前学期", state: "active", start: 2, end: 8, resume: null },
+      { title: "像素画练习", group: "技能 / 低优先", state: "paused", start: 1, end: 3, resume: { from: 6, to: 8 } },
+      { title: "日语推进", group: "技能 / 长线", state: "paused", start: 0, end: 2, resume: { from: 7, to: 8 } },
+      { title: "旧版星伞收束", group: "项目 / 归档", state: "ended", start: 0, end: 5, resume: null }
+    ];
+
+    plans.forEach((plan) => {
+      const label = document.createElement("div");
+      label.className = "plan-row-label";
+      label.innerHTML = `
+        <span class="plan-badge ${plan.state}"></span>
+        <div><strong>${plan.title}</strong><span>${plan.group}</span></div>
+      `;
+      planGrid.appendChild(label);
+
+      const lane = document.createElement("div");
+      lane.className = "track-lane";
+      lane.style.gridColumn = "2 / span 10";
+
+      const trackUnit = Math.max((planGrid.scrollWidth - 180) / 10, 86);
+      const startX = plan.start * trackUnit + 12;
+      const endX = plan.end * trackUnit + 12;
+
+      const startNode = document.createElement("div");
+      startNode.className = "track-node filled";
+      startNode.style.left = `${startX}px`;
+      lane.appendChild(startNode);
+
+      const bar = document.createElement("div");
+      bar.className = `track-bar ${plan.state === "paused" ? "paused" : plan.state === "ended" ? "ended" : ""}`;
+      bar.style.left = `${startX + 7}px`;
+      bar.style.width = `${Math.max(endX - startX, 8)}px`;
+      lane.appendChild(bar);
+
+      const endNode = document.createElement("div");
+      endNode.className = "track-node";
+      if (plan.state === "active" || plan.state === "ended") {
+        endNode.classList.add("filled");
+      }
+      endNode.style.left = `${endX}px`;
+      lane.appendChild(endNode);
+
+      if (plan.resume) {
+        const paused = document.createElement("div");
+        paused.className = "track-bar paused";
+        paused.style.left = `${plan.resume.from * trackUnit + 19}px`;
+        paused.style.width = `${(plan.resume.to - plan.resume.from) * trackUnit}px`;
+        lane.appendChild(paused);
+
+        const resumeNode = document.createElement("div");
+        resumeNode.className = "track-node filled";
+        resumeNode.style.left = `${plan.resume.from * trackUnit + 12}px`;
+        lane.appendChild(resumeNode);
+
+        const finalNode = document.createElement("div");
+        finalNode.className = "track-node";
+        finalNode.style.left = `${plan.resume.to * trackUnit + 12}px`;
+        lane.appendChild(finalNode);
+      }
+
+      planGrid.appendChild(lane);
+    });
+
+    toggle.addEventListener("click", () => {
+      document.body.classList.toggle("light-mode");
+    });
+
+    const canvas = document.getElementById("butterfly-canvas");
+    const ctx = canvas.getContext("2d");
+    const butterflies = [];
+    let animationFrame = null;
+    const leftLaunchPad = { x: 0, y: 0 };
+    const butterflySprite = new Image();
+    butterflySprite.src = "./public/butterfly-glow.svg";
+    const ambientButterflyCount = 6;
+
+    function resizeCanvas() {
+      const ratio = window.devicePixelRatio || 1;
+      canvas.width = window.innerWidth * ratio;
+      canvas.height = window.innerHeight * ratio;
+      canvas.style.width = `${window.innerWidth}px`;
+      canvas.style.height = `${window.innerHeight}px`;
+      ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
+    }
+
+    function updateLaunchPad() {
+      leftLaunchPad.x = window.innerWidth * 0.15;
+      leftLaunchPad.y = window.innerHeight * 0.72;
+    }
+
+    function randomBetween(min, max) {
+      return min + Math.random() * (max - min);
+    }
+
+    function createAmbientFlightPlan(slot = 0, slotCount = ambientButterflyCount) {
+      const normalizedSlot = slotCount <= 1 ? 0.5 : slot / (slotCount - 1);
+      const startX = randomBetween(window.innerWidth * 0.02, window.innerWidth * 0.36);
+      const startYBand = window.innerHeight * (0.26 + normalizedSlot * 0.36);
+      const startY = startYBand + randomBetween(-30, 30);
+      const endX = randomBetween(window.innerWidth * 0.64, window.innerWidth * 0.98);
+      const endYBand = window.innerHeight * (0.2 + normalizedSlot * 0.58);
+      const endY = endYBand + randomBetween(-34, 34);
+      const lift = randomBetween(120, 220);
+      const spread = randomBetween(90, 190);
+
+      return {
+        startX,
+        startY,
+        control1X: startX + randomBetween(110, 240),
+        control1Y: startY - lift,
+        control2X: endX - randomBetween(180, 340),
+        control2Y: endY + randomBetween(24, spread),
+        endX,
+        endY,
+        spiralAmplitude: randomBetween(8, 18),
+        spiralFrequency: randomBetween(5.8, 8.2),
+        spiralPhase: Math.random() * Math.PI * 2,
+        driftBias: randomBetween(-10, 10)
+      };
+    }
+
+    function cubicBezierPoint(plan, t) {
+      const inv = 1 - t;
+      return {
+        x:
+          inv ** 3 * plan.startX +
+          3 * inv ** 2 * t * plan.control1X +
+          3 * inv * t ** 2 * plan.control2X +
+          t ** 3 * plan.endX,
+        y:
+          inv ** 3 * plan.startY +
+          3 * inv ** 2 * t * plan.control1Y +
+          3 * inv * t ** 2 * plan.control2Y +
+          t ** 3 * plan.endY
+      };
+    }
+
+    function cubicBezierTangent(plan, t) {
+      const inv = 1 - t;
+      return {
+        x:
+          3 * inv ** 2 * (plan.control1X - plan.startX) +
+          6 * inv * t * (plan.control2X - plan.control1X) +
+          3 * t ** 2 * (plan.endX - plan.control2X),
+        y:
+          3 * inv ** 2 * (plan.control1Y - plan.startY) +
+          6 * inv * t * (plan.control2Y - plan.control1Y) +
+          3 * t ** 2 * (plan.endY - plan.control2Y)
+      };
+    }
+
+    function hasNearbyButterfly(x, y, minDistance, ignoreIndex = -1) {
+      return butterflies.some((item, index) => {
+        if (index === ignoreIndex) return false;
+        return Math.hypot(item.x - x, item.y - y) < minDistance;
+      });
+    }
+
+    function createButterfly(index, options = {}) {
+      const ambient = options.kind !== "pointer";
+      const ambientSlot = options.ambientSlot ?? (index % ambientButterflyCount);
+      let flightPlan = ambient ? createAmbientFlightPlan(ambientSlot, ambientButterflyCount) : null;
+      let baseX = ambient ? flightPlan.startX : options.x;
+      let baseY = ambient ? flightPlan.startY : options.y;
+
+      if (ambient) {
+        for (let attempt = 0; attempt < 18 && hasNearbyButterfly(baseX, baseY, 150, options.ignoreIndex ?? -1); attempt++) {
+          flightPlan = createAmbientFlightPlan(ambientSlot, ambientButterflyCount);
+          baseX = flightPlan.startX;
+          baseY = flightPlan.startY;
+        }
+      }
+
+      const direction = ambient
+        ? -0.64 + Math.random() * 0.24
+        : -1.6 + Math.random() * 0.45;
+      const speed = ambient ? 2.4 + Math.random() * 1.2 : 0;
+
+      return {
+        kind: ambient ? "ambient" : "pointer",
+        x: baseX,
+        y: baseY,
+        baseX,
+        baseY,
+        vx: Math.cos(direction) * speed,
+        vy: Math.sin(direction) * speed,
+        phase: Math.random() * Math.PI * 2,
+        flap: Math.random() * Math.PI * 2,
+        pulse: Math.random() * Math.PI * 2,
+        size: options.size ?? ((ambient ? 10 : 12) + Math.random() * (ambient ? 10 : 6)),
+        style: options.style ?? 0,
+        orbitAngle: options.orbitAngle ?? Math.random() * Math.PI * 2,
+        orbitSpeed: options.orbitSpeed ?? (0.26 + Math.random() * 0.13),
+        orbitRadius: options.orbitRadius ?? (18 + Math.random() * 34),
+        riseSpeed: options.riseSpeed ?? (4.8 + Math.random() * 2.6),
+        driftX: (Math.random() - 0.5) * 2.1,
+        spiralTilt: 0.55 + Math.random() * 0.55,
+        trailOffset: Math.random() * Math.PI * 2,
+        pathNoise: 0.8 + Math.random() * 1.4,
+        flightPlan,
+        progress: ambient ? (options.progress ?? Math.min(0.94, ambientSlot / ambientButterflyCount + randomBetween(-0.035, 0.035))) : 0,
+        progressSpeed: ambient ? randomBetween(0.0021, 0.0032) : 0,
+        spriteRotationOffset: Math.PI / 2,
+        ambientSlot,
+        age: 0,
+        maxAge: 90 + Math.random() * 55
+      };
+    }
+
+    function initButterflies() {
+      butterflies.length = 0;
+      for (let i = 0; i < ambientButterflyCount; i++) {
+        butterflies.push(createButterfly(i, {
+          ambientSlot: i,
+          progress: Math.min(0.92, i / ambientButterflyCount + randomBetween(-0.025, 0.025))
+        }));
+      }
+    }
+
+    function drawButterfly(b) {
+      const glow = document.body.classList.contains("light-mode");
+      const eyeRing = "rgba(0,0,0,0.9)";
+      const white = "rgba(255,255,255,0.985)";
+      const fade = b.kind === "pointer" ? Math.max(0, 1 - b.age / b.maxAge) : 1;
+      const pulse = Math.sin(b.pulse) * 0.5 + 0.5;
+      const alpha = b.style === 2
+        ? fade
+        : fade * (0.76 + pulse * 0.16);
+      const silhouetteScale = b.style === 2 ? 1 : 0.97 + pulse * 0.04;
+
+      ctx.save();
+      ctx.translate(b.x, b.y);
+      ctx.rotate(b.style === 2 ? 0 : Math.atan2(b.vy, b.vx) + (b.spriteRotationOffset ?? 0));
+      ctx.globalAlpha = alpha;
+      ctx.scale(silhouetteScale, silhouetteScale);
+
+      if (glow || b.style === 2) {
+        ctx.beginPath();
+        const eyeRingScale = glow ? 2.18 + pulse * 0.18 : 1.62 + pulse * 0.12;
+        ctx.arc(0, 0, b.size * eyeRingScale, 0, Math.PI * 2);
+        ctx.fillStyle = eyeRing;
+        ctx.fill();
+      }
+
+      ctx.shadowBlur = b.style === 2 ? 16 + pulse * 5 : 5;
+      ctx.shadowColor = b.style === 2 ? "rgba(255,255,255,0.5)" : "rgba(255,255,255,0.26)";
+
+      ctx.strokeStyle = white;
+      ctx.fillStyle = white;
+      ctx.lineWidth = 1.1;
+
+      if (b.style === 0 || b.style === 1) {
+        const spriteReady = butterflySprite.complete && butterflySprite.naturalWidth > 0;
+        const width = b.size * 4.8;
+        const height = b.size * 4.2;
+
+        if (spriteReady) {
+          ctx.save();
+          ctx.globalAlpha = alpha * (0.34 + pulse * 0.18);
+          ctx.shadowBlur = 26 + pulse * 14;
+          ctx.shadowColor = "rgba(255,255,255,0.82)";
+          ctx.scale(1.18 + pulse * 0.04, 1.18 + pulse * 0.04);
+          ctx.drawImage(butterflySprite, -width / 2, -height / 2, width, height);
+          ctx.restore();
+
+          ctx.save();
+          ctx.globalAlpha = alpha * (0.92 + pulse * 0.08);
+          ctx.shadowBlur = 16 + pulse * 8;
+          ctx.shadowColor = "rgba(255,255,255,0.55)";
+          ctx.drawImage(butterflySprite, -width / 2, -height / 2, width, height);
+          ctx.restore();
+        } else {
+          ctx.beginPath();
+          ctx.ellipse(-b.size * 0.7, -b.size * 0.22, b.size * 0.9, b.size * 0.62, -0.72, 0, Math.PI * 2);
+          ctx.ellipse(-b.size * 0.6, b.size * 0.52, b.size * 0.6, b.size * 0.44, 0.84, 0, Math.PI * 2);
+          ctx.ellipse(b.size * 0.7, -b.size * 0.22, b.size * 0.9, b.size * 0.62, 0.72, 0, Math.PI * 2);
+          ctx.ellipse(b.size * 0.6, b.size * 0.52, b.size * 0.6, b.size * 0.44, -0.84, 0, Math.PI * 2);
+          ctx.fill();
+        }
+      } else {
+        ctx.save();
+        ctx.globalAlpha = 0.12 + pulse * 0.1;
+        for (let i = 0; i < 18; i++) {
+          const angle = -1.82 + i * 0.12;
+          const length = b.size * (1.32 + (i % 5) * 0.08 + pulse * 0.24);
+          ctx.beginPath();
+          ctx.moveTo(Math.cos(angle) * b.size * 0.92, Math.sin(angle) * b.size * 0.84);
+          ctx.lineTo(Math.cos(angle) * length, Math.sin(angle) * length);
+          ctx.stroke();
+        }
+        ctx.restore();
+
+        ctx.save();
+        ctx.translate(-b.size * 0.26, -b.size * 0.48);
+        ctx.rotate(-0.85 + pulse * 0.08);
+        ctx.beginPath();
+        ctx.ellipse(0, 0, b.size * 0.56, b.size * 0.28, 0, 0, Math.PI * 2);
+        ctx.fillStyle = `rgba(255,255,255,${0.62 + pulse * 0.18})`;
+        ctx.fill();
+        ctx.restore();
+
+        ctx.beginPath();
+        ctx.ellipse(-b.size * 0.72, -b.size * 0.22, b.size * 0.86, b.size * 0.56, -0.7, 0, Math.PI * 2);
+        ctx.ellipse(-b.size * 0.64, b.size * 0.42, b.size * 0.64, b.size * 0.36, 0.8, 0, Math.PI * 2);
+        ctx.ellipse(b.size * 0.72, -b.size * 0.22, b.size * 0.86, b.size * 0.56, 0.7, 0, Math.PI * 2);
+        ctx.ellipse(b.size * 0.64, b.size * 0.42, b.size * 0.64, b.size * 0.36, -0.8, 0, Math.PI * 2);
+        ctx.fill();
+      }
+
+      ctx.shadowBlur = 0;
+      ctx.restore();
+    }
+
+    function tick() {
+      ctx.clearRect(0, 0, window.innerWidth, window.innerHeight);
+
+      butterflies.forEach((b, index) => {
+        b.phase += 0.026 + index * 0.0008;
+        b.pulse += b.style === 2 ? 0.08 : 0.05;
+
+        if (b.kind === "pointer") {
+          b.age += 1;
+          b.baseY -= b.riseSpeed;
+          b.baseX += b.driftX + Math.sin(b.phase * 0.82 + b.trailOffset) * 0.82;
+          b.orbitAngle += b.orbitSpeed;
+          b.x = b.baseX + Math.cos(b.orbitAngle) * b.orbitRadius;
+          b.y = b.baseY + Math.sin(b.orbitAngle + b.trailOffset * 0.3) * b.orbitRadius * b.spiralTilt;
+          b.vx = Math.cos(b.orbitAngle + Math.PI / 2) * (2 + b.orbitRadius * 0.03);
+          b.vy = -b.riseSpeed + Math.sin(b.orbitAngle + Math.PI / 2) * 0.5;
+        } else {
+          b.progress += b.progressSpeed;
+          const t = Math.min(b.progress, 1);
+          const plan = b.flightPlan;
+          const point = cubicBezierPoint(plan, t);
+          const tangent = cubicBezierTangent(plan, t);
+          const tangentLength = Math.max(1, Math.hypot(tangent.x, tangent.y));
+          const normalX = -tangent.y / tangentLength;
+          const normalY = tangent.x / tangentLength;
+          const spiralAmount = Math.sin(t * plan.spiralFrequency + plan.spiralPhase) * plan.spiralAmplitude * (1 - t * 0.8);
+          const longitudinal = Math.sin(t * (plan.spiralFrequency * 0.42) + plan.spiralPhase) * 4;
+
+          b.x = point.x + normalX * spiralAmount + (tangent.x / tangentLength) * longitudinal;
+          b.y = point.y + normalY * spiralAmount * 0.34 + (tangent.y / tangentLength) * longitudinal * 0.12;
+          b.vx = tangent.x / 18 + normalX * Math.cos(t * plan.spiralFrequency + plan.spiralPhase) * 0.28;
+          b.vy = tangent.y / 18 + normalY * Math.cos(t * plan.spiralFrequency + plan.spiralPhase) * 0.16;
+        }
+
+        if (b.kind === "ambient") {
+          if (b.progress >= 1.02) {
+            Object.assign(b, createButterfly(index, {
+              style: 0,
+              ignoreIndex: index,
+              ambientSlot: b.ambientSlot,
+              progress: randomBetween(0, 0.04)
+            }));
+          }
+          drawButterfly(b);
+        } else if (b.age < b.maxAge && b.y > -120) {
+          ctx.save();
+          ctx.strokeStyle = "rgba(255,255,255,0.22)";
+          ctx.lineWidth = 1.15;
+          ctx.beginPath();
+          ctx.moveTo(b.baseX, b.baseY + 8);
+          for (let trailStep = 1; trailStep <= 5; trailStep++) {
+            const trailAngle = b.orbitAngle - trailStep * 0.42;
+            const trailX = b.baseX + Math.cos(trailAngle) * b.orbitRadius;
+            const trailY = b.baseY + Math.sin(trailAngle) * b.orbitRadius * b.spiralTilt + trailStep * 8;
+            ctx.lineTo(trailX, trailY);
+          }
+          ctx.stroke();
+          ctx.globalAlpha = Math.max(0, 0.12 - b.age / b.maxAge * 0.08);
+          for (let trailStep = 1; trailStep <= 2; trailStep++) {
+            const trailAngle = b.orbitAngle - trailStep * 0.72;
+            const trailX = b.baseX + Math.cos(trailAngle) * b.orbitRadius;
+            const trailY = b.baseY + Math.sin(trailAngle) * b.orbitRadius * b.spiralTilt + trailStep * 8;
+            drawButterfly({
+              ...b,
+              x: trailX,
+              y: trailY,
+              size: b.size * (1 - trailStep * 0.14),
+              age: b.age + trailStep * 10
+            });
+          }
+          ctx.restore();
+          drawButterfly(b);
+        }
+      });
+
+      for (let i = butterflies.length - 1; i >= 0; i--) {
+        if (butterflies[i].kind === "pointer" && (butterflies[i].age >= butterflies[i].maxAge || butterflies[i].y <= -120)) {
+          butterflies.splice(i, 1);
+        }
+      }
+
+      animationFrame = requestAnimationFrame(tick);
+    }
+
+    window.addEventListener("resize", () => {
+      resizeCanvas();
+      updateLaunchPad();
+      initButterflies();
+      updateTimelinePinPosition();
+    });
+
+    function enableDragScroll(container) {
+      const state = {
+        active: false,
+        startX: 0,
+        startY: 0,
+        scrollLeft: 0,
+        scrollTop: 0
+      };
+
+      container.addEventListener("pointerdown", (event) => {
+        if (event.pointerType === "mouse" && event.button !== 0) return;
+        state.active = true;
+        state.startX = event.clientX;
+        state.startY = event.clientY;
+        state.scrollLeft = container.scrollLeft;
+        state.scrollTop = container.scrollTop;
+        container.classList.add("dragging");
+        container.setPointerCapture(event.pointerId);
+      });
+
+      container.addEventListener("pointermove", (event) => {
+        if (!state.active) return;
+        const deltaX = event.clientX - state.startX;
+        const deltaY = event.clientY - state.startY;
+        container.scrollLeft = state.scrollLeft - deltaX;
+        container.scrollTop = state.scrollTop - deltaY;
+      });
+
+      function endDrag(event) {
+        if (!state.active) return;
+        state.active = false;
+        container.classList.remove("dragging");
+        if (event) {
+          container.releasePointerCapture(event.pointerId);
+        }
+      }
+
+      container.addEventListener("pointerup", endDrag);
+      container.addEventListener("pointercancel", endDrag);
+      container.addEventListener("lostpointercapture", () => {
+        state.active = false;
+        container.classList.remove("dragging");
+      });
+    }
+
+    timelineScroll.addEventListener("scroll", updateTimelinePinPosition);
+    enableDragScroll(timelineScroll);
+    enableDragScroll(planScroll);
+
+    resizeCanvas();
+    updateLaunchPad();
+    initButterflies();
+    updateTimelinePinPosition();
+    tick();
+  </script>
+</body>
+</html>

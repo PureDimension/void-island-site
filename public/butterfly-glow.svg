@@ -1,0 +1,38 @@
+<svg width="512" height="512" viewBox="0 0 512 512" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <filter id="butterflyGlow" x="0" y="0" width="512" height="512" filterUnits="userSpaceOnUse" color-interpolation-filters="sRGB">
+      <feGaussianBlur stdDeviation="28" result="blurStrong"/>
+      <feGaussianBlur in="SourceGraphic" stdDeviation="10" result="blurSoft"/>
+      <feColorMatrix in="blurStrong" type="matrix" values="1 0 0 0 0  0 1 0 0 0  0 0 1 0 0  0 0 0 1 0" result="outerGlow"/>
+      <feColorMatrix in="blurSoft" type="matrix" values="1 0 0 0 0  0 1 0 0 0  0 0 1 0 0  0 0 0 0.95 0" result="innerGlow"/>
+      <feMerge>
+        <feMergeNode in="outerGlow"/>
+        <feMergeNode in="innerGlow"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+    <radialGradient id="wingFill" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="translate(256 244) rotate(90) scale(176 190)">
+      <stop offset="0" stop-color="white"/>
+      <stop offset="0.72" stop-color="white"/>
+      <stop offset="1" stop-color="#F5F7FA"/>
+    </radialGradient>
+  </defs>
+
+  <g filter="url(#butterflyGlow)">
+    <g opacity="0.5">
+      <path d="M242 214C218 162 154 110 100 108C82 108 74 116 72 132C64 186 102 262 176 282C210 290 232 274 242 214Z" fill="white"/>
+      <path d="M270 214C294 162 358 110 412 108C430 108 438 116 440 132C448 186 410 262 336 282C302 290 280 274 270 214Z" fill="white"/>
+      <path d="M240 246C210 246 168 284 154 334C144 372 168 408 206 416C242 422 258 388 260 346C262 304 258 266 240 246Z" fill="white"/>
+      <path d="M272 246C302 246 344 284 358 334C368 372 344 408 306 416C270 422 254 388 252 346C250 304 254 266 272 246Z" fill="white"/>
+    </g>
+
+    <g>
+      <path d="M240 210C220 162 162 118 116 116C98 116 90 124 88 138C82 188 118 252 184 272C212 280 230 264 240 210Z" fill="url(#wingFill)"/>
+      <path d="M272 210C292 162 350 118 396 116C414 116 422 124 424 138C430 188 394 252 328 272C300 280 282 264 272 210Z" fill="url(#wingFill)"/>
+      <path d="M238 244C208 246 176 284 166 330C158 366 176 394 208 402C238 408 252 382 254 344C256 302 252 264 238 244Z" fill="url(#wingFill)"/>
+      <path d="M274 244C304 246 336 284 346 330C354 366 336 394 304 402C274 408 260 382 258 344C256 302 260 264 274 244Z" fill="url(#wingFill)"/>
+      <ellipse cx="256" cy="240" rx="7" ry="28" fill="white" opacity="0.54"/>
+      <ellipse cx="256" cy="282" rx="4.2" ry="36" fill="white" opacity="0.4"/>
+    </g>
+  </g>
+</svg>

@@ -34,7 +34,6 @@ log "Latest Commit: $CURRENT_COMMIT - $COMMIT_MSG"
 log "Step 2: Cleaning up artifacts, cache and node_modules..."
 rm -rf .next
 rm -rf node_modules
-rm -f *.db 
 rm -f .aether_cache_*
 npm cache clean --force
 
