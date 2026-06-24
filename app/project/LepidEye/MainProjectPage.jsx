@@ -44,14 +44,6 @@ const PERMISSION_LEVEL_OPTIONS = [
   { value: "2", label: "2 级 / 小类隐藏" },
   { value: "3", label: "3 级 / 大类隐藏" }
 ];
-const PLAN_NODE_IMPORTANCE_OPTIONS = [
-  { value: "-2", label: "明显降低" },
-  { value: "-1", label: "轻微降低" },
-  { value: "0", label: "保持不变" },
-  { value: "1", label: "轻微提升" },
-  { value: "2", label: "明显提升" }
-];
-
 function createPlanNodeDraft(overrides = {}) {
   return {
     clientId: overrides.clientId ?? `node-${Math.random().toString(36).slice(2, 10)}`,
@@ -59,7 +51,7 @@ function createPlanNodeDraft(overrides = {}) {
     title: overrides.title ?? "",
     nodeDate: overrides.nodeDate ?? "",
     progressValue: overrides.progressValue ?? "0",
-    importanceDelta: overrides.importanceDelta ?? "0",
+    status: overrides.status ?? "active",
     note: overrides.note ?? ""
   };
 }
@@ -73,7 +65,7 @@ function normalizePlanNodeDrafts(nodes) {
       title: node.title ?? "",
       nodeDate: node.nodeDate ?? node.node_date ?? "",
       progressValue: String(node.progressValue ?? node.progress_value ?? "0"),
-      importanceDelta: String(node.importanceDelta ?? node.importance_delta ?? "0"),
+      status: node.status ?? "active",
       note: node.note ?? ""
     })
   );
@@ -252,6 +244,88 @@ function statusLabel(status) {
   if (status === "active") return "活跃";
   if (status === "inactive") return "非活跃";
   return "已完成";
+}
+
+function buildRecentEventTaskPresets(events, majorCategory, minorCategory, nowTime) {
+  if (!majorCategory || !minorCategory) return [];
+
+  const windowMs = 14 * 24 * 60 * 60 * 1000;
+  const byTaskName = new Map();
+
+  events.forEach((event) => {
+    if (event.major_category !== majorCategory || event.minor_category !== minorCategory) return;
+
+    const startTime = parseLocalDateTime(event.start_at).getTime();
+    if (Math.abs(startTime - nowTime) > windowMs) return;
+
+    const current = byTaskName.get(event.task_name);
+    if (!current || startTime > current.startTime) {
+      byTaskName.set(event.task_name, {
+        taskName: event.task_name,
+        startTime,
+        repeatType: event.repeat_type,
+        repeatUntil: event.repeat_until ?? "",
+        nature: event.nature,
+        permissionLevel: String(event.permission_level ?? 0),
+        color: rgbStringToHex(event.color),
+        note: event.note ?? ""
+      });
+    }
+  });
+
+  return [...byTaskName.values()].sort((left, right) => right.startTime - left.startTime);
+}
+
+function buildPlanTrackSegments(plan, displayEndDate) {
+  const sortedNodes = [...(plan.nodes ?? [])]
+    .map((node) => ({
+      ...node,
+      nodeDate: parseLocalDate(node.node_date ?? node.nodeDate),
+      progressValue: clampProgress(node.progress_value ?? node.progressValue ?? 0),
+      status: node.status ?? "active"
+    }))
+    .sort((left, right) => left.nodeDate.getTime() - right.nodeDate.getTime());
+
+  const segmentStates = [];
+  const initialStatus = sortedNodes[0]?.status ?? plan.status;
+  const initialProgress = sortedNodes[0]?.progressValue ?? clampProgress(plan.progress);
+  segmentStates.push({
+    startDate: parseLocalDate(plan.start_date),
+    status: initialStatus,
+    progress: initialProgress,
+    note: plan.note ?? ""
+  });
+
+  sortedNodes.forEach((node) => {
+    segmentStates.push({
+      startDate: node.nodeDate,
+      status: node.status,
+      progress: node.progressValue,
+      note: node.note ?? ""
+    });
+  });
+
+  const uniqueStates = segmentStates.reduce((accumulator, state) => {
+    const lastState = accumulator[accumulator.length - 1];
+    if (lastState && lastState.startDate.getTime() === state.startDate.getTime()) {
+      accumulator[accumulator.length - 1] = state;
+      return accumulator;
+    }
+    accumulator.push(state);
+    return accumulator;
+  }, []);
+
+  return uniqueStates
+    .map((state, index) => {
+      const nextState = uniqueStates[index + 1];
+      const endDate = nextState ? nextState.startDate : displayEndDate;
+      if (endDate.getTime() <= state.startDate.getTime()) return null;
+      return {
+        ...state,
+        endDate
+      };
+    })
+    .filter(Boolean);
 }
 
 function buildOverlapStripe(taskGroup, alpha = 0.82) {
@@ -847,6 +921,7 @@ export default function MainProjectPage({ projects, bootstrap, editorKey, viewer
   const [planScale, setPlanScale] = useState("day");
   const [eventCategoryFilter, setEventCategoryFilter] = useState("全部大类");
   const [planCategoryFilter, setPlanCategoryFilter] = useState("全部大类");
+  const [showInactivePlanRows, setShowInactivePlanRows] = useState(false);
   const [hoverCard, setHoverCard] = useState(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [activeDialog, setActiveDialog] = useState(null);
@@ -870,7 +945,9 @@ export default function MainProjectPage({ projects, bootstrap, editorKey, viewer
     minorMode: NEW_OPTION,
     minorSelect: NEW_OPTION,
     minorInput: "",
-    taskName: "",
+    taskNameMode: NEW_OPTION,
+    taskNameSelect: NEW_OPTION,
+    taskNameInput: "",
     startAt: defaultEventStart,
     endAt: defaultEventEnd,
     repeatType: "none",
@@ -1181,10 +1258,6 @@ export default function MainProjectPage({ projects, bootstrap, editorKey, viewer
     [accessLevel, bootstrap.events]
   );
 
-  const visiblePlans = useMemo(
-    () => bootstrap.plans.map((plan) => sanitizePlanForMode(plan, accessLevel)).filter(Boolean),
-    [accessLevel, bootstrap.plans]
-  );
   const planNodesByPlanId = useMemo(() => {
     const grouped = new Map();
     (bootstrap.planNodes ?? []).forEach((node) => {
@@ -1194,6 +1267,17 @@ export default function MainProjectPage({ projects, bootstrap, editorKey, viewer
     });
     return grouped;
   }, [bootstrap.planNodes]);
+  const visiblePlans = useMemo(
+    () =>
+      bootstrap.plans
+        .map((plan) => sanitizePlanForMode(plan, accessLevel))
+        .filter(Boolean)
+        .map((plan) => ({
+          ...plan,
+          nodes: planNodesByPlanId.get(plan.id) ?? []
+        })),
+    [accessLevel, bootstrap.plans, planNodesByPlanId]
+  );
 
   const eventCategoryCatalog = useMemo(() => collectCategoryOptions(bootstrap.events), [bootstrap.events]);
   const planCategoryCatalog = useMemo(() => collectCategoryOptions(bootstrap.plans), [bootstrap.plans]);
@@ -1252,6 +1336,24 @@ export default function MainProjectPage({ projects, bootstrap, editorKey, viewer
       setPlanCategoryFilter("全部大类");
     }
   }, [planCategoryFilter, planCategoryOptions]);
+
+  useEffect(() => {
+    const container = timelineScrollRef.current;
+    if (!container) return;
+
+    const nextLeft = Math.max(
+      0,
+      timelinePastDays * timelineDayWidth + timelineDayWidth / 2 - container.clientWidth / 2
+    );
+    const nextTop = Math.max(0, beijingNow.hour * timelineRowHeight + timelineRowHeight / 2 - container.clientHeight / 2);
+
+    const frameId = window.requestAnimationFrame(() => {
+      container.scrollLeft = nextLeft;
+      container.scrollTop = nextTop;
+    });
+
+    return () => window.cancelAnimationFrame(frameId);
+  }, [beijingNow.day, beijingNow.hour, beijingNow.month, beijingNow.year]);
 
   useEffect(() => {
     if (!activeDialog || typeof window === "undefined") return undefined;
@@ -1329,6 +1431,10 @@ export default function MainProjectPage({ projects, bootstrap, editorKey, viewer
     return draft.minorMode === NEW_OPTION ? draft.minorInput.trim() : draft.minorSelect;
   }
 
+  function getDraftTaskNameValue(draft) {
+    return draft.taskNameMode === NEW_OPTION ? draft.taskNameInput.trim() : draft.taskNameSelect;
+  }
+
   function buildEventDraft() {
     const defaultMajor = eventCategoryCatalog.majors[0] ?? "";
     const defaultMinor = eventCategoryCatalog.minorMap.get(defaultMajor)?.[0] ?? "";
@@ -1342,7 +1448,9 @@ export default function MainProjectPage({ projects, bootstrap, editorKey, viewer
       minorMode: hasDefaultMinor ? "existing" : NEW_OPTION,
       minorSelect: hasDefaultMinor ? defaultMinor : NEW_OPTION,
       minorInput: "",
-      taskName: "",
+      taskNameMode: NEW_OPTION,
+      taskNameSelect: NEW_OPTION,
+      taskNameInput: "",
       startAt: defaultEventStart,
       endAt: defaultEventEnd,
       repeatType: "none",
@@ -1384,6 +1492,14 @@ export default function MainProjectPage({ projects, bootstrap, editorKey, viewer
     const hasMajor = eventCategoryCatalog.majors.includes(event.major_category);
     const minorOptions = hasMajor ? eventCategoryCatalog.minorMap.get(event.major_category) ?? [] : [];
     const hasMinor = minorOptions.includes(event.minor_category);
+    const nowTime = new Date(beijingNow.year, beijingNow.month - 1, beijingNow.day, beijingNow.hour, 0, 0, 0).getTime();
+    const recentTaskPresets = buildRecentEventTaskPresets(
+      editableEvents,
+      event.major_category,
+      event.minor_category,
+      nowTime
+    );
+    const hasTaskName = recentTaskPresets.some((preset) => preset.taskName === event.task_name);
 
     return {
       majorMode: hasMajor ? "existing" : NEW_OPTION,
@@ -1392,7 +1508,9 @@ export default function MainProjectPage({ projects, bootstrap, editorKey, viewer
       minorMode: hasMinor ? "existing" : NEW_OPTION,
       minorSelect: hasMinor ? event.minor_category : NEW_OPTION,
       minorInput: hasMinor ? "" : event.minor_category,
-      taskName: event.task_name,
+      taskNameMode: hasTaskName ? "existing" : NEW_OPTION,
+      taskNameSelect: hasTaskName ? event.task_name : NEW_OPTION,
+      taskNameInput: hasTaskName ? "" : event.task_name,
       startAt: formatDateTimeField(parseLocalDateTime(event.start_at)),
       endAt: formatDateTimeField(parseLocalDateTime(event.end_at)),
       repeatType: event.repeat_type,
@@ -1493,7 +1611,10 @@ export default function MainProjectPage({ projects, bootstrap, editorKey, viewer
         majorInput: "",
         minorMode: NEW_OPTION,
         minorSelect: NEW_OPTION,
-        minorInput: ""
+        minorInput: "",
+        taskNameMode: NEW_OPTION,
+        taskNameSelect: NEW_OPTION,
+        taskNameInput: ""
       }));
       return;
     }
@@ -1506,7 +1627,10 @@ export default function MainProjectPage({ projects, bootstrap, editorKey, viewer
       majorInput: "",
       minorMode: nextMinor ? "existing" : NEW_OPTION,
       minorSelect: nextMinor || NEW_OPTION,
-      minorInput: ""
+      minorInput: "",
+      taskNameMode: NEW_OPTION,
+      taskNameSelect: NEW_OPTION,
+      taskNameInput: ""
     }));
   }
 
@@ -1536,6 +1660,24 @@ export default function MainProjectPage({ projects, bootstrap, editorKey, viewer
     }));
   }
 
+  function applyEventTaskPreset(taskName) {
+    const preset = recentEventTaskPresets.find((item) => item.taskName === taskName);
+    if (!preset) return;
+
+    setEventDraft((current) => ({
+      ...current,
+      taskNameMode: "existing",
+      taskNameSelect: taskName,
+      taskNameInput: "",
+      repeatType: preset.repeatType,
+      repeatUntil: preset.repeatType === "none" ? "" : preset.repeatUntil,
+      nature: preset.nature,
+      permissionLevel: preset.permissionLevel,
+      color: preset.color,
+      note: preset.note
+    }));
+  }
+
   function updatePlanNodeDraft(clientId, patch) {
     setPlanDraft((current) => ({
       ...current,
@@ -1551,7 +1693,7 @@ export default function MainProjectPage({ projects, bootstrap, editorKey, viewer
         createPlanNodeDraft({
           nodeDate: current.startDate || defaultPlanDate,
           progressValue: current.progress || "0",
-          importanceDelta: "0"
+          status: current.status || "active"
         })
       ]
     }));
@@ -1569,7 +1711,7 @@ export default function MainProjectPage({ projects, bootstrap, editorKey, viewer
       title: node.title.trim(),
       node_date: node.nodeDate,
       progress_value: Number(node.progressValue),
-      importance_delta: Number(node.importanceDelta),
+      status: node.status,
       note: node.note.trim(),
       sort_order: index
     }));
@@ -1587,9 +1729,8 @@ export default function MainProjectPage({ projects, bootstrap, editorKey, viewer
       if (Number.isNaN(progressValue) || progressValue < 0 || progressValue > 100) {
         return "计划节点的进度值需要是 0 到 100 之间的数字。";
       }
-      const importanceDelta = Number(node.importanceDelta);
-      if (Number.isNaN(importanceDelta) || importanceDelta < -5 || importanceDelta > 5) {
-        return "计划节点的重要度变化需要在 -5 到 5 之间。";
+      if (!PLAN_STATUS_OPTIONS.some((option) => option.value === node.status)) {
+        return "计划节点的状态设置无效。";
       }
     }
     return "";
@@ -1598,7 +1739,7 @@ export default function MainProjectPage({ projects, bootstrap, editorKey, viewer
   async function submitEventDraft() {
     const majorCategory = getDraftMajorValue(eventDraft);
     const minorCategory = getDraftMinorValue(eventDraft);
-    const taskName = eventDraft.taskName.trim();
+    const taskName = getDraftTaskNameValue(eventDraft);
 
     if (!majorCategory || !minorCategory || !taskName) {
       setDialogError("请先完整填写大类、小类与事务名称。");
@@ -1693,7 +1834,7 @@ export default function MainProjectPage({ projects, bootstrap, editorKey, viewer
   async function submitEventEdit() {
     const majorCategory = getDraftMajorValue(eventDraft);
     const minorCategory = getDraftMinorValue(eventDraft);
-    const taskName = eventDraft.taskName.trim();
+    const taskName = getDraftTaskNameValue(eventDraft);
 
     if (!eventDraft.id) {
       setDialogError("未找到需要编辑的事务对象。");
@@ -1997,17 +2138,51 @@ export default function MainProjectPage({ projects, bootstrap, editorKey, viewer
 
   const sortedPlans = useMemo(() => {
     const stateOrder = { primary: 0, active: 1, inactive: 2, done: 3 };
-    return [...filteredPlans].sort((a, b) => {
+    const visiblePlanRows = showInactivePlanRows ? filteredPlans : filteredPlans.filter((plan) => plan.status !== "inactive");
+    return [...visiblePlanRows].sort((a, b) => {
       const stateDiff = (stateOrder[a.status] ?? 9) - (stateOrder[b.status] ?? 9);
       if (stateDiff !== 0) return stateDiff;
       return a.start_date.localeCompare(b.start_date);
     });
-  }, [filteredPlans]);
+  }, [filteredPlans, showInactivePlanRows]);
 
   const eventMinorOptions = useMemo(() => {
     const majorValue = eventDraft.majorMode === NEW_OPTION ? "" : eventDraft.majorSelect;
     return majorValue ? eventCategoryCatalog.minorMap.get(majorValue) ?? [] : [];
   }, [eventCategoryCatalog.minorMap, eventDraft.majorMode, eventDraft.majorSelect]);
+
+  const recentEventTaskPresets = useMemo(() => {
+    const majorValue = eventDraft.majorMode === NEW_OPTION ? "" : eventDraft.majorSelect;
+    const minorValue = eventDraft.minorMode === NEW_OPTION ? "" : eventDraft.minorSelect;
+    const nowTime = new Date(beijingNow.year, beijingNow.month - 1, beijingNow.day, beijingNow.hour, 0, 0, 0).getTime();
+    return buildRecentEventTaskPresets(editableEvents, majorValue, minorValue, nowTime);
+  }, [
+    beijingNow.day,
+    beijingNow.hour,
+    beijingNow.month,
+    beijingNow.year,
+    editableEvents,
+    eventDraft.majorMode,
+    eventDraft.majorSelect,
+    eventDraft.minorMode,
+    eventDraft.minorSelect
+  ]);
+
+  const eventTaskNameOptions = useMemo(
+    () => recentEventTaskPresets.map((preset) => preset.taskName),
+    [recentEventTaskPresets]
+  );
+
+  useEffect(() => {
+    if (eventDraft.taskNameMode !== "existing") return;
+    if (eventTaskNameOptions.includes(eventDraft.taskNameSelect)) return;
+    setEventDraft((current) => ({
+      ...current,
+      taskNameMode: NEW_OPTION,
+      taskNameSelect: NEW_OPTION,
+      taskNameInput: ""
+    }));
+  }, [eventDraft.taskNameMode, eventDraft.taskNameSelect, eventTaskNameOptions]);
 
   const planMinorOptions = useMemo(() => {
     const majorValue = planDraft.majorMode === NEW_OPTION ? "" : planDraft.majorSelect;
@@ -2200,6 +2375,14 @@ export default function MainProjectPage({ projects, bootstrap, editorKey, viewer
                     ))}
                   </select>
                 </label>
+                <label className="inline-toggle">
+                  <input
+                    type="checkbox"
+                    checked={showInactivePlanRows}
+                    onChange={(event) => setShowInactivePlanRows(event.target.checked)}
+                  />
+                  <span>展开非活跃计划</span>
+                </label>
                 <div className="scale-switch" role="tablist" aria-label="计划轨道尺度">
                   {Object.entries(planScaleMap).map(([key, value]) => (
                     <button
@@ -2247,12 +2430,10 @@ export default function MainProjectPage({ projects, bootstrap, editorKey, viewer
                   const isRunningState = plan.status === "primary" || plan.status === "active" || plan.status === "inactive";
                   const effectiveStartDate = startDate > today ? today : startDate;
                   const displayEndDate = isRunningState ? today : completedAt ?? expectedDueDate ?? startDate;
+                  const planSegments = buildPlanTrackSegments(plan, displayEndDate);
                   const dueIndex = expectedDueDate ? findPlanAxisIndex(expectedDueDate, planAxis) : null;
                   const startCenter = getPlanAxisPosition(effectiveStartDate, planAxis, planUnitWidth);
                   const endCenter = getPlanAxisPosition(displayEndDate, planAxis, planUnitWidth);
-                  const left = Math.min(startCenter, endCenter);
-                  const width = Math.max(Math.abs(endCenter - startCenter), 4);
-                  const shouldRenderTrack = endCenter > startCenter || plan.status === "done";
                   const planHoverDetail = {
                     type: "plan",
                     title: plan.displayTaskName,
@@ -2295,20 +2476,28 @@ export default function MainProjectPage({ projects, bootstrap, editorKey, viewer
                         {dueIndex !== null && dueIndex >= 0 && dueIndex < planColumnCount && (
                           <div className="plan-due-cell" style={{ left: `${dueIndex * planUnitWidth}px`, width: `${planUnitWidth}px` }} />
                         )}
-                        {shouldRenderTrack && (
-                          <div
-                            className={`plan-bar ${mapPlanState(plan.status)}`}
-                            style={{
-                              left: `${left}px`,
-                              width: `${width}px`,
-                              "--plan-color": plan.color,
-                              "--plan-progress": `${clampProgress(plan.progress)}%`
-                            }}
-                          >
-                            <div className="plan-bar-remaining" />
-                            <div className="plan-bar-progress" />
-                          </div>
-                        )}
+                        {planSegments.map((segment, index) => {
+                          const segmentStart = index === 0 ? effectiveStartDate : segment.startDate;
+                          const segmentLeft = getPlanAxisPosition(segmentStart, planAxis, planUnitWidth);
+                          const segmentRight = getPlanAxisPosition(segment.endDate, planAxis, planUnitWidth);
+                          const segmentWidth = Math.max(segmentRight - segmentLeft, 4);
+                          if (segmentWidth <= 0) return null;
+                          return (
+                            <div
+                              key={`${plan.id}-${segment.startDate.toISOString()}-${segment.status}`}
+                              className={`plan-bar ${mapPlanState(segment.status)}`}
+                              style={{
+                                left: `${segmentLeft}px`,
+                                width: `${segmentWidth}px`,
+                                "--plan-color": plan.color,
+                                "--plan-progress": `${clampProgress(segment.progress)}%`
+                              }}
+                            >
+                              <div className="plan-bar-remaining" />
+                              <div className="plan-bar-progress" />
+                            </div>
+                          );
+                        })}
                         <div className="plan-node start" style={{ left: `${startCenter - 9}px`, "--plan-color": plan.color }} />
                         {plan.status === "done" && (
                           <div className="plan-node end" style={{ left: `${endCenter - 9}px`, "--plan-color": plan.color }} />
@@ -2731,7 +2920,10 @@ export default function MainProjectPage({ projects, bootstrap, editorKey, viewer
                         ...current,
                         minorMode: value === NEW_OPTION ? NEW_OPTION : "existing",
                         minorSelect: value === NEW_OPTION ? NEW_OPTION : value,
-                        minorInput: ""
+                        minorInput: "",
+                        taskNameMode: NEW_OPTION,
+                        taskNameSelect: NEW_OPTION,
+                        taskNameInput: ""
                       }));
                     }}
                   >
@@ -2758,13 +2950,42 @@ export default function MainProjectPage({ projects, bootstrap, editorKey, viewer
 
                 <label className="dialog-field wide">
                   <span>事务名称</span>
-                  <input
-                    type="text"
-                    value={eventDraft.taskName}
-                    onChange={(event) => setEventDraft((current) => ({ ...current, taskName: event.target.value }))}
-                    placeholder="写一个清晰的事务名称"
-                  />
+                  <select
+                    value={eventDraft.taskNameMode === NEW_OPTION ? NEW_OPTION : eventDraft.taskNameSelect}
+                    onChange={(event) => {
+                      const value = event.target.value;
+                      if (value === NEW_OPTION) {
+                        setEventDraft((current) => ({
+                          ...current,
+                          taskNameMode: NEW_OPTION,
+                          taskNameSelect: NEW_OPTION,
+                          taskNameInput: ""
+                        }));
+                        return;
+                      }
+                      applyEventTaskPreset(value);
+                    }}
+                  >
+                    {eventTaskNameOptions.map((option) => (
+                      <option key={option} value={option}>
+                        {option}
+                      </option>
+                    ))}
+                    <option value={NEW_OPTION}>新增事务名称</option>
+                  </select>
                 </label>
+
+                {eventDraft.taskNameMode === NEW_OPTION && (
+                  <label className="dialog-field wide">
+                    <span>新事务名称</span>
+                    <input
+                      type="text"
+                      value={eventDraft.taskNameInput}
+                      onChange={(event) => setEventDraft((current) => ({ ...current, taskNameInput: event.target.value }))}
+                      placeholder="写一个清晰的事务名称"
+                    />
+                  </label>
+                )}
 
                 <label className="dialog-field">
                   <span>开始时间</span>
@@ -3046,7 +3267,7 @@ export default function MainProjectPage({ projects, bootstrap, editorKey, viewer
                   <div className="plan-node-section-head">
                     <div>
                       <strong>计划节点</strong>
-                      <p>节点只记录阶段名称、进度值和重要度变化，用于补充计划内部里程碑。</p>
+                      <p>节点记录计划在某一天起进入的状态与进度，用来定义轨道分段。</p>
                     </div>
                     <button type="button" className="plan-node-add-btn" onClick={addPlanNodeDraft}>
                       新增节点
@@ -3100,12 +3321,12 @@ export default function MainProjectPage({ projects, bootstrap, editorKey, viewer
                             </label>
 
                             <label className="dialog-field">
-                              <span>重要度变化</span>
+                              <span>节点状态</span>
                               <select
-                                value={node.importanceDelta}
-                                onChange={(event) => updatePlanNodeDraft(node.clientId, { importanceDelta: event.target.value })}
+                                value={node.status}
+                                onChange={(event) => updatePlanNodeDraft(node.clientId, { status: event.target.value })}
                               >
-                                {PLAN_NODE_IMPORTANCE_OPTIONS.map((option) => (
+                                {PLAN_STATUS_OPTIONS.map((option) => (
                                   <option key={option.value} value={option.value}>
                                     {option.label}
                                   </option>
@@ -3681,6 +3902,22 @@ export default function MainProjectPage({ projects, bootstrap, editorKey, viewer
           color: var(--text);
           font: inherit;
           outline: none;
+        }
+
+        .inline-toggle {
+          display: inline-flex;
+          align-items: center;
+          gap: 8px;
+          color: var(--muted);
+          font-size: 0.74rem;
+          letter-spacing: 0.06em;
+          user-select: none;
+        }
+
+        .inline-toggle input {
+          width: 16px;
+          height: 16px;
+          accent-color: rgba(186, 222, 255, 0.94);
         }
 
         .scale-switch {

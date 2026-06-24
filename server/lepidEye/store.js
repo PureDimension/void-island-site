@@ -112,7 +112,7 @@ function normalizePlanNodes(nodes) {
       title: String(node?.title ?? "").trim(),
       node_date: String(node?.node_date ?? "").trim(),
       progress_value: Number(node?.progress_value ?? 0),
-      importance_delta: Number(node?.importance_delta ?? 0),
+      status: normalizePlanStatus(node?.status),
       note: String(node?.note ?? "").trim(),
       sort_order: Number(node?.sort_order ?? index)
     }))
@@ -120,7 +120,6 @@ function normalizePlanNodes(nodes) {
     .map((node, index) => ({
       ...node,
       progress_value: Number.isFinite(node.progress_value) ? Math.min(100, Math.max(0, Math.round(node.progress_value))) : 0,
-      importance_delta: Number.isFinite(node.importance_delta) ? Math.min(5, Math.max(-5, Math.round(node.importance_delta))) : 0,
       sort_order: index
     }));
 }
@@ -137,7 +136,7 @@ function syncPlanNodes(planId, nodes) {
       title,
       node_date,
       progress_value,
-      importance_delta,
+      status,
       note,
       sort_order
     ) VALUES (?, ?, ?, ?, ?, ?, ?)
@@ -149,7 +148,7 @@ function syncPlanNodes(planId, nodes) {
       node.title,
       node.node_date,
       node.progress_value,
-      node.importance_delta,
+      node.status,
       node.note,
       node.sort_order
     );
@@ -163,6 +162,13 @@ function hashAccessToken(token) {
 function normalizeAccessRole(role) {
   if (typeof role !== "string") return "low";
   return ACCESS_LEVELS.has(role) ? role : "low";
+}
+
+function normalizePlanStatus(status) {
+  if (status === "primary" || status === "active" || status === "inactive" || status === "done") {
+    return status;
+  }
+  return "active";
 }
 
 function ensureAdminAccessToken() {
@@ -239,7 +245,7 @@ function initLepidEyeDatabase() {
       title TEXT NOT NULL,
       node_date TEXT NOT NULL,
       progress_value INTEGER NOT NULL DEFAULT 0,
-      importance_delta INTEGER NOT NULL DEFAULT 0,
+      status TEXT NOT NULL DEFAULT 'active',
       note TEXT DEFAULT '',
       sort_order INTEGER NOT NULL DEFAULT 0,
       FOREIGN KEY(plan_id) REFERENCES lepid_eye_plans(id)
@@ -260,6 +266,7 @@ function initLepidEyeDatabase() {
   ensureColumn("lepid_eye_plans", "color", "TEXT DEFAULT ''");
   ensureColumn("lepid_eye_plans", "completed_at", "TEXT");
   ensureColumn("lepid_eye_access_tokens", "note", "TEXT DEFAULT ''");
+  migratePlanNodesTable();
 
   ensureAdminAccessToken();
 
@@ -394,6 +401,63 @@ function ensureColumn(tableName, columnName, columnDef) {
   if (!exists) {
     db.exec(`ALTER TABLE ${tableName} ADD COLUMN ${columnName} ${columnDef}`);
   }
+}
+
+function migratePlanNodesTable() {
+  const columns = db.prepare("PRAGMA table_info(lepid_eye_plan_nodes)").all();
+  const hasStatus = columns.some((column) => column.name === "status");
+  const hasImportanceDelta = columns.some((column) => column.name === "importance_delta");
+
+  if (hasStatus && !hasImportanceDelta) return;
+
+  const tx = db.transaction(() => {
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS lepid_eye_plan_nodes_next (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        plan_id INTEGER NOT NULL,
+        title TEXT NOT NULL,
+        node_date TEXT NOT NULL,
+        progress_value INTEGER NOT NULL DEFAULT 0,
+        status TEXT NOT NULL DEFAULT 'active',
+        note TEXT DEFAULT '',
+        sort_order INTEGER NOT NULL DEFAULT 0,
+        FOREIGN KEY(plan_id) REFERENCES lepid_eye_plans(id)
+      )
+    `);
+
+    db.exec("DELETE FROM lepid_eye_plan_nodes_next");
+
+    if (columns.length) {
+      db.exec(`
+        INSERT INTO lepid_eye_plan_nodes_next (
+          id,
+          plan_id,
+          title,
+          node_date,
+          progress_value,
+          status,
+          note,
+          sort_order
+        )
+        SELECT
+          n.id,
+          n.plan_id,
+          n.title,
+          n.node_date,
+          n.progress_value,
+          p.status,
+          COALESCE(n.note, ''),
+          COALESCE(n.sort_order, 0)
+        FROM lepid_eye_plan_nodes n
+        LEFT JOIN lepid_eye_plans p ON p.id = n.plan_id
+      `);
+    }
+
+    db.exec("DROP TABLE lepid_eye_plan_nodes");
+    db.exec("ALTER TABLE lepid_eye_plan_nodes_next RENAME TO lepid_eye_plan_nodes");
+  });
+
+  tx();
 }
 
 function resolveLepidEyeAccess(requestKey) {
