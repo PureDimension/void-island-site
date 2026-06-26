@@ -306,6 +306,7 @@ function initLepidEyeDatabase() {
   ensureColumn("lepid_eye_access_tokens", "note", "TEXT DEFAULT ''");
   migratePlansTable();
   migratePlanNodesTable();
+  backfillMissingPlanNodesFromLegacySnapshot();
 
   ensureAdminAccessToken();
 
@@ -422,6 +423,66 @@ function ensureColumn(tableName, columnName, columnDef) {
   }
 }
 
+function hasLegacyPlanSnapshot() {
+  return Boolean(
+    db
+      .prepare(
+        "SELECT 1 FROM sqlite_temp_master WHERE type = 'table' AND name = 'lepid_eye_plan_legacy_snapshot'"
+      )
+      .get()
+  );
+}
+
+function stageLegacyPlanSnapshot() {
+  db.exec("DROP TABLE IF EXISTS temp.lepid_eye_plan_legacy_snapshot");
+  db.exec(`
+    CREATE TEMP TABLE lepid_eye_plan_legacy_snapshot AS
+    SELECT
+      id AS plan_id,
+      task_name AS title,
+      start_date AS node_date,
+      progress AS progress_value,
+      status,
+      COALESCE(note, '') AS note
+    FROM lepid_eye_plans
+  `);
+}
+
+function backfillMissingPlanNodesFromLegacySnapshot() {
+  if (!hasLegacyPlanSnapshot()) return;
+
+  db.exec(`
+    INSERT INTO lepid_eye_plan_nodes (
+      plan_id,
+      title,
+      node_date,
+      progress_value,
+      status,
+      note,
+      sort_order
+    )
+    SELECT
+      snapshot.plan_id,
+      snapshot.title,
+      snapshot.node_date,
+      MIN(100, MAX(0, COALESCE(snapshot.progress_value, 0))),
+      CASE
+        WHEN snapshot.status IN ('primary', 'active', 'inactive', 'done') THEN snapshot.status
+        ELSE 'active'
+      END,
+      snapshot.note,
+      0
+    FROM lepid_eye_plan_legacy_snapshot snapshot
+    WHERE NOT EXISTS (
+      SELECT 1
+      FROM lepid_eye_plan_nodes nodes
+      WHERE nodes.plan_id = snapshot.plan_id
+    )
+  `);
+
+  db.exec("DROP TABLE IF EXISTS temp.lepid_eye_plan_legacy_snapshot");
+}
+
 function migratePlansTable() {
   const columns = db.prepare("PRAGMA table_info(lepid_eye_plans)").all();
   const hasStatus = columns.some((column) => column.name === "status");
@@ -432,6 +493,8 @@ function migratePlansTable() {
   db.exec("PRAGMA foreign_keys = OFF");
 
   try {
+    stageLegacyPlanSnapshot();
+
     db.exec(`
       CREATE TABLE IF NOT EXISTS lepid_eye_plans_next (
         id INTEGER PRIMARY KEY AUTOINCREMENT,

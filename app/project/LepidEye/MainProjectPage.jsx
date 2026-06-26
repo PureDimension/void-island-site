@@ -566,10 +566,10 @@ function buildStatsForRange(events, plans, rangeDays, now) {
         !activeEvents.some(
           (otherEvent) =>
             otherEvent !== event &&
-            otherEvent.clippedStart.getTime() <= event.clippedStart.getTime() &&
-            otherEvent.clippedEnd.getTime() >= event.clippedEnd.getTime() &&
-            (otherEvent.clippedStart.getTime() < event.clippedStart.getTime() ||
-              otherEvent.clippedEnd.getTime() > event.clippedEnd.getTime())
+            event.clippedStart.getTime() <= otherEvent.clippedStart.getTime() &&
+            event.clippedEnd.getTime() >= otherEvent.clippedEnd.getTime() &&
+            (event.clippedStart.getTime() < otherEvent.clippedStart.getTime() ||
+              event.clippedEnd.getTime() > otherEvent.clippedEnd.getTime())
         )
     );
 
