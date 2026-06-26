@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import ReturnMenus from "@/components/ReturnMenus";
 import PieDonutCard from "./PieDonutCard";
 import { useTheme } from "@/lib/theme";
@@ -1644,7 +1644,7 @@ export default function MainProjectPage({ projects, bootstrap, editorKey, viewer
     };
   }, [activeDialog, isSubmitting]);
 
-  function openHoverCard(event, detail) {
+  const openHoverCard = useCallback((event, detail) => {
     if (hoverCloseTimerRef.current) {
       window.clearTimeout(hoverCloseTimerRef.current);
       hoverCloseTimerRef.current = null;
@@ -1666,13 +1666,13 @@ export default function MainProjectPage({ projects, bootstrap, editorKey, viewer
       x: anchoredX,
       y: Math.max(12, Math.min(preferredY, viewportHeight - tooltipHeight))
     });
-  }
+  }, []);
 
-  function moveHoverCard(event) {
+  const moveHoverCard = useCallback((event) => {
     setHoverCard((current) => current);
-  }
+  }, []);
 
-  function closeHoverCard() {
+  const closeHoverCard = useCallback(() => {
     if (typeof window === "undefined") {
       setHoverCard(null);
       return;
@@ -1684,14 +1684,14 @@ export default function MainProjectPage({ projects, bootstrap, editorKey, viewer
       setHoverCard(null);
       hoverCloseTimerRef.current = null;
     }, 120);
-  }
+  }, []);
 
-  function keepHoverCardOpen() {
+  const keepHoverCardOpen = useCallback(() => {
     if (hoverCloseTimerRef.current) {
       window.clearTimeout(hoverCloseTimerRef.current);
       hoverCloseTimerRef.current = null;
     }
-  }
+  }, []);
 
   function getDraftMajorValue(draft) {
     return draft.majorMode === NEW_OPTION ? draft.majorInput.trim() : draft.majorSelect;
@@ -2442,6 +2442,30 @@ export default function MainProjectPage({ projects, bootstrap, editorKey, viewer
     [beijingNow.day, beijingNow.month, beijingNow.year, filteredEvents]
   );
 
+  const timelineDayTasks = useMemo(() => {
+    const grouped = Array.from({ length: timelineDays.length }, () => []);
+    timelineTasks.forEach((task) => {
+      if (task.dayIndex >= 0 && task.dayIndex < grouped.length) {
+        grouped[task.dayIndex].push(task);
+      }
+    });
+    return grouped;
+  }, [timelineDays.length, timelineTasks]);
+
+  const timelineDayLayouts = useMemo(
+    () =>
+      timelineDays.map((day, dayIndex) => {
+        const dayTasks = timelineDayTasks[dayIndex] ?? [];
+        return {
+          day,
+          dayIndex,
+          cards: buildTimelineEventCards(dayTasks),
+          overlapMarkers: buildTimelineOverlapMarkers(dayTasks)
+        };
+      }),
+    [timelineDayTasks, timelineDays]
+  );
+
   const sortedPlans = useMemo(() => {
     const stateOrder = { primary: 0, active: 1, inactive: 2, done: 3 };
     const visiblePlanRows = showInactivePlanRows
@@ -2453,6 +2477,43 @@ export default function MainProjectPage({ projects, bootstrap, editorKey, viewer
       return a.start_date.localeCompare(b.start_date);
     });
   }, [filteredPlans, showInactivePlanRows]);
+
+  const preparedPlanRows = useMemo(() => {
+    const today = new Date(beijingNow.year, beijingNow.month - 1, beijingNow.day);
+    return sortedPlans.map((plan) => {
+      const startDate = parseLocalDate(plan.start_date);
+      const expectedDueDate = plan.expected_due_date ? parseLocalDate(plan.expected_due_date) : null;
+      const completedAt = plan.completedAt ? parseLocalDate(plan.completedAt) : null;
+      const isRunningState =
+        plan.currentStatus === "primary" || plan.currentStatus === "active" || plan.currentStatus === "inactive";
+      const effectiveStartDate = startDate > today ? today : startDate;
+      const displayEndDate = isRunningState ? today : completedAt ?? expectedDueDate ?? startDate;
+
+      return {
+        plan,
+        effectiveStartDate,
+        dueIndex: expectedDueDate ? findPlanAxisIndex(expectedDueDate, planAxis) : null,
+        startCenter: getPlanAxisPosition(effectiveStartDate, planAxis, planUnitWidth),
+        endCenter: getPlanAxisPosition(displayEndDate, planAxis, planUnitWidth),
+        planSegments: buildPlanTrackSegments(plan, displayEndDate),
+        planHoverDetail: {
+          type: "plan",
+          title: plan.displayTaskName,
+          lines: [
+            `大类：${plan.displayMajor}`,
+            `小类：${plan.displayMinor}`,
+            `状态：${statusLabel(plan.currentStatus)}`,
+            `进度：${plan.currentProgress}%`,
+            `起始：${plan.start_date}`,
+            `截止：${plan.expected_due_date ?? "未设置"}`,
+            `完成：${plan.currentStatus === "done" ? plan.completedAt ?? "未记录" : "未完成"}`,
+            plan.displayNote || "无备注"
+          ],
+          editTarget: isCreator ? { entity: "plan", id: plan.id } : null
+        }
+      };
+    });
+  }, [beijingNow.day, beijingNow.month, beijingNow.year, isCreator, planAxis, planUnitWidth, sortedPlans]);
 
   const eventMinorOptions = useMemo(() => {
     const majorValue = eventDraft.majorMode === NEW_OPTION ? "" : eventDraft.majorSelect;
@@ -2633,17 +2694,7 @@ export default function MainProjectPage({ projects, bootstrap, editorKey, viewer
                 }}
               >
                 {Array.from({ length: 24 }, (_, hour) => (
-                  <FragmentRow
-                    key={hour}
-                    hour={hour}
-                    days={timelineDays}
-                    currentHour={beijingNow.hour}
-                    taskRows={timelineTasks}
-                    isCreator={isCreator}
-                    onHover={openHoverCard}
-                    onHoverMove={moveHoverCard}
-                    onHoverEnd={closeHoverCard}
-                  />
+                  <FragmentRow key={hour} hour={hour} days={timelineDays} currentHour={beijingNow.hour} />
                 ))}
                 <div
                   className="timeline-event-layer"
@@ -2653,12 +2704,13 @@ export default function MainProjectPage({ projects, bootstrap, editorKey, viewer
                     height: `${24 * timelineRowHeight}px`
                   }}
                 >
-                  {timelineDays.map((day, dayIndex) => (
+                  {timelineDayLayouts.map(({ day, dayIndex, cards, overlapMarkers }) => (
                     <TimelineDayColumn
                       key={day.key}
                       day={day}
                       dayIndex={dayIndex}
-                      taskRows={timelineTasks}
+                      cards={cards}
+                      overlapMarkers={overlapMarkers}
                       isCreator={isCreator}
                       onHover={openHoverCard}
                       onHoverMove={moveHoverCard}
@@ -2731,35 +2783,7 @@ export default function MainProjectPage({ projects, bootstrap, editorKey, viewer
                     left: `${planLabelWidth + getPlanAxisPosition(new Date(beijingNow.year, beijingNow.month - 1, beijingNow.day), planAxis, planUnitWidth)}px`
                   }}
                 />
-                {sortedPlans.map((plan) => {
-                  const startDate = parseLocalDate(plan.start_date);
-                  const expectedDueDate = plan.expected_due_date ? parseLocalDate(plan.expected_due_date) : null;
-                  const completedAt = plan.completedAt ? parseLocalDate(plan.completedAt) : null;
-                  const today = new Date(beijingNow.year, beijingNow.month - 1, beijingNow.day);
-                  const isRunningState =
-                    plan.currentStatus === "primary" || plan.currentStatus === "active" || plan.currentStatus === "inactive";
-                  const effectiveStartDate = startDate > today ? today : startDate;
-                  const displayEndDate = isRunningState ? today : completedAt ?? expectedDueDate ?? startDate;
-                  const planSegments = buildPlanTrackSegments(plan, displayEndDate);
-                  const dueIndex = expectedDueDate ? findPlanAxisIndex(expectedDueDate, planAxis) : null;
-                  const startCenter = getPlanAxisPosition(effectiveStartDate, planAxis, planUnitWidth);
-                  const endCenter = getPlanAxisPosition(displayEndDate, planAxis, planUnitWidth);
-                  const planHoverDetail = {
-                    type: "plan",
-                    title: plan.displayTaskName,
-                    lines: [
-                      `大类：${plan.displayMajor}`,
-                      `小类：${plan.displayMinor}`,
-                      `状态：${statusLabel(plan.currentStatus)}`,
-                      `进度：${plan.currentProgress}%`,
-                      `起始：${plan.start_date}`,
-                      `截止：${plan.expected_due_date ?? "未设置"}`,
-                      `完成：${plan.currentStatus === "done" ? plan.completedAt ?? "未记录" : "未完成"}`,
-                      plan.displayNote || "无备注"
-                    ],
-                    editTarget: isCreator ? { entity: "plan", id: plan.id } : null
-                  };
-
+                {preparedPlanRows.map(({ plan, effectiveStartDate, dueIndex, startCenter, endCenter, planSegments, planHoverDetail }) => {
                   return (
                     <div
                       key={plan.id}
@@ -5657,7 +5681,7 @@ export default function MainProjectPage({ projects, bootstrap, editorKey, viewer
   );
 }
 
-function FragmentRow({ hour, days, currentHour }) {
+const FragmentRow = memo(function FragmentRow({ hour, days, currentHour }) {
   return (
     <>
       <div className="timeline-hour">{String(hour).padStart(2, "0")}:00</div>
@@ -5675,16 +5699,12 @@ function FragmentRow({ hour, days, currentHour }) {
       })}
     </>
   );
-}
+});
 
-function TimelineDayColumn({ day, dayIndex, taskRows, isCreator, onHover, onHoverMove, onHoverEnd }) {
-  const dayTasks = taskRows.filter((item) => item.dayIndex === dayIndex);
-  const timelineCards = buildTimelineEventCards(dayTasks);
-  const overlapMarkers = buildTimelineOverlapMarkers(dayTasks);
-
+const TimelineDayColumn = memo(function TimelineDayColumn({ day, dayIndex, cards, overlapMarkers, isCreator, onHover, onHoverMove, onHoverEnd }) {
   return (
     <div className={`timeline-day-overlay ${day.isToday ? "today" : ""}`} style={{ left: `${dayIndex * timelineDayWidth}px` }}>
-      {timelineCards.map((task) => {
+      {cards.map((task) => {
         const taskHoverDetail = {
           type: "event",
           title: task.label,
@@ -5758,4 +5778,4 @@ function TimelineDayColumn({ day, dayIndex, taskRows, isCreator, onHover, onHove
       })}
     </div>
   );
-}
+});
