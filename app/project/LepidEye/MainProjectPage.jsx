@@ -25,30 +25,6 @@ const statsRangeOptions = [
   { value: 15, label: "半月" },
   { value: 30, label: "月" }
 ];
-const piePalette = [
-  {
-    color: "rgba(255,255,255,0.94)",
-    topStart: "#ffffff",
-    topEnd: "#dfe5ef",
-    sideStart: "#d1d7e2",
-    sideEnd: "#707885"
-  },
-  {
-    color: "rgba(186, 222, 255, 0.95)",
-    topStart: "#d7ecff",
-    topEnd: "#8db9e6",
-    sideStart: "#95b8db",
-    sideEnd: "#53687e"
-  },
-  {
-    color: "rgba(255,255,255,0.62)",
-    topStart: "#d6d7da",
-    topEnd: "#92979f",
-    sideStart: "#9298a2",
-    sideEnd: "#535861"
-  }
-];
-
 const NEW_OPTION = "__new__";
 const EVENT_REPEAT_OPTIONS = [
   { value: "none", label: "不重复" },
@@ -545,6 +521,7 @@ function buildStatsForRange(events, plans, rangeDays, now) {
   const periodStart = new Date(periodEnd.getTime() - rangeDays * 24 * 60 * 60 * 1000);
   const visibleEvents = expandEventOccurrencesForStats(events, periodStart, periodEnd);
   const categoryTotals = new Map();
+  const categoryColorTotals = new Map();
   const timePoints = [
     periodStart.getTime(),
     periodEnd.getTime(),
@@ -580,17 +557,35 @@ function buildStatsForRange(events, plans, rangeDays, now) {
     effectiveEvents.forEach((event) => {
       const categoryLabel = event.displayMajor ?? event.major_category;
       categoryTotals.set(categoryLabel, (categoryTotals.get(categoryLabel) ?? 0) + sharedDurationHours);
+
+      const colorKey = event.color || "rgb(186, 222, 255)";
+      const colorTotals = categoryColorTotals.get(categoryLabel) ?? new Map();
+      const currentColorStats = colorTotals.get(colorKey) ?? { hours: 0, lastSeenAt: 0 };
+      colorTotals.set(colorKey, {
+        hours: currentColorStats.hours + sharedDurationHours,
+        lastSeenAt: Math.max(currentColorStats.lastSeenAt, sliceEnd)
+      });
+      categoryColorTotals.set(categoryLabel, colorTotals);
     });
   }
 
   const totalHours = Math.max(1 / 60, (periodEnd.getTime() - periodStart.getTime()) / 3600000);
   const pieSegments = [...categoryTotals.entries()]
     .sort((left, right) => right[1] - left[1])
-    .map(([label, hours], index) => ({
-      label,
-      value: (hours / totalHours) * 100,
-      ...piePalette[index % piePalette.length]
-    }))
+    .map(([label, hours]) => {
+      const dominantColor =
+        [...(categoryColorTotals.get(label)?.entries() ?? [])]
+          .sort((left, right) => {
+            if (right[1].hours !== left[1].hours) return right[1].hours - left[1].hours;
+            return right[1].lastSeenAt - left[1].lastSeenAt;
+          })[0]?.[0] ?? "rgb(186, 222, 255)";
+
+      return {
+        label,
+        value: (hours / totalHours) * 100,
+        ...buildPieSegmentStyle(dominantColor)
+      };
+    })
     .map((segment) => ({
       ...segment,
       value: Math.max(1, Math.round(segment.value))
@@ -966,6 +961,31 @@ function rgbStringToHex(value) {
     .slice(0, 3)
     .map((item) => Math.max(0, Math.min(255, item)).toString(16).padStart(2, "0"))
     .join("")}`;
+}
+
+function parseRgbString(value) {
+  const numbers = String(value ?? "").match(/\d+/g)?.map(Number) ?? [];
+  if (numbers.length < 3) return [186, 222, 255];
+  return numbers.slice(0, 3).map((item) => Math.max(0, Math.min(255, item)));
+}
+
+function mixRgb(base, target, amount) {
+  return base.map((channel, index) => Math.round(channel * (1 - amount) + target[index] * amount));
+}
+
+function rgbArrayToCss(rgb, alpha = 1) {
+  return `rgba(${rgb[0]}, ${rgb[1]}, ${rgb[2]}, ${alpha})`;
+}
+
+function buildPieSegmentStyle(color) {
+  const base = parseRgbString(color);
+  return {
+    color: rgbArrayToCss(base, 0.94),
+    topStart: rgbArrayToCss(mixRgb(base, [255, 255, 255], 0.46)),
+    topEnd: rgbArrayToCss(mixRgb(base, [255, 255, 255], 0.16)),
+    sideStart: rgbArrayToCss(mixRgb(base, [28, 36, 48], 0.28)),
+    sideEnd: rgbArrayToCss(mixRgb(base, [16, 20, 30], 0.54))
+  };
 }
 
 function formatDateTimeDisplay(value) {
