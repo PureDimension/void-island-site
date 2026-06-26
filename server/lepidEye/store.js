@@ -121,6 +121,15 @@ function normalizePlanNodes(nodes) {
       ...node,
       progress_value: Number.isFinite(node.progress_value) ? Math.min(100, Math.max(0, Math.round(node.progress_value))) : 0,
       sort_order: index
+    }))
+    .sort((left, right) => {
+      const dateDiff = left.node_date.localeCompare(right.node_date);
+      if (dateDiff !== 0) return dateDiff;
+      return left.sort_order - right.sort_order;
+    })
+    .map((node, index) => ({
+      ...node,
+      sort_order: index
     }));
 }
 
@@ -169,6 +178,37 @@ function normalizePlanStatus(status) {
     return status;
   }
   return "active";
+}
+
+function getLatestPlanNode(nodes) {
+  if (!Array.isArray(nodes) || !nodes.length) return null;
+  return [...nodes].sort((left, right) => {
+    const dateDiff = String(left.node_date).localeCompare(String(right.node_date));
+    if (dateDiff !== 0) return dateDiff;
+    return Number(left.sort_order ?? 0) - Number(right.sort_order ?? 0);
+  }).at(-1) ?? null;
+}
+
+function getCurrentPlanSnapshot(plan, nodes) {
+  const latestNode = getLatestPlanNode(nodes);
+  if (!latestNode) {
+    return {
+      latest_node: null,
+      current_status: "active",
+      current_progress: 0,
+      completed_at: plan.completed_at ?? null
+    };
+  }
+
+  return {
+    latest_node: latestNode,
+    current_status: normalizePlanStatus(latestNode.status),
+    current_progress: Math.min(100, Math.max(0, Number(latestNode.progress_value ?? 0) || 0)),
+    completed_at:
+      normalizePlanStatus(latestNode.status) === "done"
+        ? plan.completed_at ?? latestNode.node_date ?? null
+        : null
+  };
 }
 
 function ensureAdminAccessToken() {
@@ -228,8 +268,6 @@ function initLepidEyeDatabase() {
       minor_category TEXT NOT NULL,
       task_name TEXT NOT NULL,
       start_date TEXT NOT NULL,
-      status TEXT NOT NULL,
-      progress INTEGER NOT NULL DEFAULT 0,
       expected_due_date TEXT,
       completed_at TEXT,
       permission_level INTEGER NOT NULL DEFAULT 0,
@@ -266,6 +304,7 @@ function initLepidEyeDatabase() {
   ensureColumn("lepid_eye_plans", "color", "TEXT DEFAULT ''");
   ensureColumn("lepid_eye_plans", "completed_at", "TEXT");
   ensureColumn("lepid_eye_access_tokens", "note", "TEXT DEFAULT ''");
+  migratePlansTable();
   migratePlanNodesTable();
 
   ensureAdminAccessToken();
@@ -289,28 +328,12 @@ function initLepidEyeDatabase() {
   db.prepare(
     `
       UPDATE lepid_eye_plans
-      SET color = CASE status
-        WHEN 'primary' THEN ?
-        WHEN 'active' THEN ?
-        WHEN 'inactive' THEN ?
-        ELSE ?
-      END
+      SET color = ?
       WHERE color IS NULL OR color = ''
     `
   ).run(
-    PLAN_COLOR_FALLBACKS.primary,
-    PLAN_COLOR_FALLBACKS.active,
-    PLAN_COLOR_FALLBACKS.inactive,
-    PLAN_COLOR_FALLBACKS.done
+    PLAN_COLOR_FALLBACKS.active
   );
-
-  db.prepare(
-    `
-      UPDATE lepid_eye_plans
-      SET completed_at = COALESCE(completed_at, expected_due_date, start_date)
-      WHERE status = 'done' AND (completed_at IS NULL OR completed_at = '')
-    `
-  ).run();
 
   const eventCount = db.prepare("SELECT COUNT(*) AS count FROM lepid_eye_events").get().count;
   const planCount = db.prepare("SELECT COUNT(*) AS count FROM lepid_eye_plans").get().count;
@@ -342,14 +365,12 @@ function initLepidEyeDatabase() {
       minor_category,
       task_name,
       start_date,
-      status,
-      progress,
       expected_due_date,
       completed_at,
       permission_level,
       color,
       note
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
   `);
 
   const tx = db.transaction(() => {
@@ -375,8 +396,6 @@ function initLepidEyeDatabase() {
         plan.minor_category,
         plan.task_name,
         plan.start_date,
-        plan.status,
-        plan.progress,
         plan.expected_due_date,
         plan.completed_at ?? null,
         plan.permission_level,
@@ -400,6 +419,75 @@ function ensureColumn(tableName, columnName, columnDef) {
   const exists = columns.some((column) => column.name === columnName);
   if (!exists) {
     db.exec(`ALTER TABLE ${tableName} ADD COLUMN ${columnName} ${columnDef}`);
+  }
+}
+
+function migratePlansTable() {
+  const columns = db.prepare("PRAGMA table_info(lepid_eye_plans)").all();
+  const hasStatus = columns.some((column) => column.name === "status");
+  const hasProgress = columns.some((column) => column.name === "progress");
+
+  if (!hasStatus && !hasProgress) return;
+
+  db.exec("PRAGMA foreign_keys = OFF");
+
+  try {
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS lepid_eye_plans_next (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        major_category TEXT NOT NULL,
+        minor_category TEXT NOT NULL,
+        task_name TEXT NOT NULL,
+        start_date TEXT NOT NULL,
+        expected_due_date TEXT,
+        completed_at TEXT,
+        permission_level INTEGER NOT NULL DEFAULT 0,
+        color TEXT DEFAULT '',
+        note TEXT DEFAULT '',
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+
+    db.exec("DELETE FROM lepid_eye_plans_next");
+    db.exec(`
+      INSERT INTO lepid_eye_plans_next (
+        id,
+        major_category,
+        minor_category,
+        task_name,
+        start_date,
+        expected_due_date,
+        completed_at,
+        permission_level,
+        color,
+        note,
+        created_at,
+        updated_at
+      )
+      SELECT
+        id,
+        major_category,
+        minor_category,
+        task_name,
+        start_date,
+        expected_due_date,
+        CASE
+          WHEN status = 'done' AND (completed_at IS NULL OR completed_at = '') THEN COALESCE(expected_due_date, start_date)
+          ELSE completed_at
+        END,
+        permission_level,
+        COALESCE(color, ''),
+        COALESCE(note, ''),
+        COALESCE(created_at, CURRENT_TIMESTAMP),
+        COALESCE(updated_at, CURRENT_TIMESTAMP)
+      FROM lepid_eye_plans
+    `);
+
+    db.exec("DROP TABLE lepid_eye_plans");
+    db.exec("ALTER TABLE lepid_eye_plans_next RENAME TO lepid_eye_plans");
+  } finally {
+    db.exec("PRAGMA foreign_keys = ON");
   }
 }
 
@@ -445,11 +533,14 @@ function migratePlanNodesTable() {
           n.title,
           n.node_date,
           n.progress_value,
-          p.status,
+          CASE
+            WHEN COALESCE(n.importance_delta, 0) > 0 THEN 'primary'
+            WHEN COALESCE(n.importance_delta, 0) < 0 THEN 'inactive'
+            ELSE 'active'
+          END,
           COALESCE(n.note, ''),
           COALESCE(n.sort_order, 0)
         FROM lepid_eye_plan_nodes n
-        LEFT JOIN lepid_eye_plans p ON p.id = n.plan_id
       `);
     }
 
@@ -632,8 +723,8 @@ function buildStats(events, plans) {
   });
 
   const started = plans.filter((plan) => new Date(plan.start_date) <= periodEnd).length;
-  const completed = plans.filter((plan) => plan.status === "done").length;
-  const remainingPlans = plans.filter((plan) => plan.status !== "done").length;
+  const completed = plans.filter((plan) => plan.current_status === "done").length;
+  const remainingPlans = plans.filter((plan) => plan.current_status !== "done").length;
 
   return {
     pieSegments,
@@ -751,14 +842,27 @@ function getLepidEyeBootstrap({ accessLevel = "low" }) {
   const events = db.prepare("SELECT * FROM lepid_eye_events ORDER BY start_at ASC").all();
   const plans = db.prepare("SELECT * FROM lepid_eye_plans ORDER BY start_date ASC").all();
   const planNodes = db.prepare("SELECT * FROM lepid_eye_plan_nodes ORDER BY plan_id ASC, sort_order ASC, node_date ASC, id ASC").all();
+  const planNodesByPlanId = new Map();
+  planNodes.forEach((node) => {
+    const current = planNodesByPlanId.get(node.plan_id) ?? [];
+    current.push(node);
+    planNodesByPlanId.set(node.plan_id, current);
+  });
+  const plansWithSnapshot = plans.map((plan) => {
+    const nodes = planNodesByPlanId.get(plan.id) ?? [];
+    return {
+      ...plan,
+      ...getCurrentPlanSnapshot(plan, nodes)
+    };
+  });
 
   const statsEvents = events.map((event) => sanitizeEventForStats(event, accessLevel)).filter(Boolean);
-  const statsPlans = plans.map((plan) => sanitizePlanForStats(plan, accessLevel)).filter(Boolean);
+  const statsPlans = plansWithSnapshot.map((plan) => sanitizePlanForStats(plan, accessLevel)).filter(Boolean);
 
   return {
     accessLevel,
     events,
-    plans,
+    plans: plansWithSnapshot,
     planNodes,
     stats: buildStats(statsEvents, statsPlans),
     aiStatus: "暂未上线"
@@ -803,8 +907,18 @@ function addLepidEyeRecord({ entity, payload }) {
   }
 
   if (entity === "plan") {
+    const normalizedNodes = normalizePlanNodes(payload.nodes ?? []);
+    if (!normalizedNodes.length) {
+      throw new Error("Plan requires at least one node");
+    }
+    if (normalizedNodes[0].node_date !== payload.start_date) {
+      throw new Error("First plan node must start on the same day as the plan");
+    }
+    const latestNode = getLatestPlanNode(normalizedNodes);
     const completedAt =
-      payload.status === "done" ? payload.completed_at ?? getNowDateOnly() : null;
+      latestNode && normalizePlanStatus(latestNode.status) === "done"
+        ? payload.completed_at ?? latestNode.node_date ?? getNowDateOnly()
+        : null;
 
     const insertPlan = db.prepare(`
       INSERT INTO lepid_eye_plans (
@@ -812,14 +926,12 @@ function addLepidEyeRecord({ entity, payload }) {
         minor_category,
         task_name,
         start_date,
-        status,
-        progress,
         expected_due_date,
         completed_at,
         permission_level,
         color,
         note
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
 
     const tx = db.transaction(() => {
@@ -828,8 +940,6 @@ function addLepidEyeRecord({ entity, payload }) {
         payload.minor_category,
         payload.task_name,
         payload.start_date,
-        payload.status,
-        Number(payload.progress ?? 0),
         payload.expected_due_date ?? null,
         completedAt,
         Number(payload.permission_level ?? 0),
@@ -838,7 +948,7 @@ function addLepidEyeRecord({ entity, payload }) {
       );
 
       const planId = Number(result.lastInsertRowid);
-      syncPlanNodes(planId, payload.nodes ?? []);
+      syncPlanNodes(planId, normalizedNodes);
 
       return { entity, id: planId };
     });
@@ -900,28 +1010,32 @@ function mutateLepidEyeRecord({ entity, action, id, payload }) {
     if (entity === "plan") {
       const current = db.prepare("SELECT * FROM lepid_eye_plans WHERE id = ?").get(id);
       if (!current) throw new Error("Plan not found");
-
-      const nextStatus = payload.status ?? current.status;
-      const nextProgress = Number(payload.progress ?? current.progress);
+      const normalizedNodes = normalizePlanNodes(payload.nodes ?? []);
+      if (!normalizedNodes.length) {
+        throw new Error("Plan requires at least one node");
+      }
+      const nextStartDate = payload.start_date ?? current.start_date;
+      if (normalizedNodes[0].node_date !== nextStartDate) {
+        throw new Error("First plan node must start on the same day as the plan");
+      }
+      const latestNode = getLatestPlanNode(normalizedNodes);
       const completedAt =
-        nextStatus === "done"
-          ? payload.completed_at ?? current.completed_at ?? getNowDateOnly()
+        latestNode && normalizePlanStatus(latestNode.status) === "done"
+          ? payload.completed_at ?? current.completed_at ?? latestNode.node_date ?? getNowDateOnly()
           : null;
 
       const tx = db.transaction(() => {
         db.prepare(`
           UPDATE lepid_eye_plans
-          SET major_category = ?, minor_category = ?, task_name = ?, start_date = ?, status = ?,
-              progress = ?, expected_due_date = ?, completed_at = ?, permission_level = ?, color = ?, note = ?,
+          SET major_category = ?, minor_category = ?, task_name = ?, start_date = ?,
+              expected_due_date = ?, completed_at = ?, permission_level = ?, color = ?, note = ?,
               updated_at = CURRENT_TIMESTAMP
           WHERE id = ?
         `).run(
           payload.major_category ?? current.major_category,
           payload.minor_category ?? current.minor_category,
           payload.task_name ?? current.task_name,
-          payload.start_date ?? current.start_date,
-          nextStatus,
-          nextProgress,
+          nextStartDate,
           payload.expected_due_date ?? current.expected_due_date,
           completedAt,
           Number(payload.permission_level ?? current.permission_level),
@@ -930,7 +1044,7 @@ function mutateLepidEyeRecord({ entity, action, id, payload }) {
           id
         );
 
-        syncPlanNodes(id, payload.nodes ?? []);
+        syncPlanNodes(id, normalizedNodes);
       });
 
       tx();

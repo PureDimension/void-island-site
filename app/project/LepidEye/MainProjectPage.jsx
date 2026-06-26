@@ -19,6 +19,35 @@ const planScaleMap = {
   month: { label: "月", width: 92 },
   year: { label: "年", width: 110 }
 };
+const statsRangeOptions = [
+  { value: 1, label: "天" },
+  { value: 7, label: "周" },
+  { value: 15, label: "半月" },
+  { value: 30, label: "月" }
+];
+const piePalette = [
+  {
+    color: "rgba(255,255,255,0.94)",
+    topStart: "#ffffff",
+    topEnd: "#dfe5ef",
+    sideStart: "#d1d7e2",
+    sideEnd: "#707885"
+  },
+  {
+    color: "rgba(186, 222, 255, 0.95)",
+    topStart: "#d7ecff",
+    topEnd: "#8db9e6",
+    sideStart: "#95b8db",
+    sideEnd: "#53687e"
+  },
+  {
+    color: "rgba(255,255,255,0.62)",
+    topStart: "#d6d7da",
+    topEnd: "#92979f",
+    sideStart: "#9298a2",
+    sideEnd: "#535861"
+  }
+];
 
 const NEW_OPTION = "__new__";
 const EVENT_REPEAT_OPTIONS = [
@@ -93,7 +122,8 @@ function getBeijingNow() {
     year: Number(get("year")),
     month: Number(get("month")),
     day: Number(get("day")),
-    hour: Number(get("hour"))
+    hour: Number(get("hour")),
+    minute: Number(get("minute"))
   };
 }
 
@@ -287,8 +317,8 @@ function buildPlanTrackSegments(plan, displayEndDate) {
     .sort((left, right) => left.nodeDate.getTime() - right.nodeDate.getTime());
 
   const segmentStates = [];
-  const initialStatus = sortedNodes[0]?.status ?? plan.status;
-  const initialProgress = sortedNodes[0]?.progressValue ?? clampProgress(plan.progress);
+  const initialStatus = sortedNodes[0]?.status ?? "active";
+  const initialProgress = sortedNodes[0]?.progressValue ?? 0;
   segmentStates.push({
     startDate: parseLocalDate(plan.start_date),
     status: initialStatus,
@@ -328,45 +358,74 @@ function buildPlanTrackSegments(plan, displayEndDate) {
     .filter(Boolean);
 }
 
-function buildOverlapStripe(taskGroup, alpha = 0.82) {
-  if (!taskGroup.length) return null;
-  if (taskGroup.length === 1) {
-    return `color-mix(in srgb, ${taskGroup[0].color} 82%, white 18%)`;
-  }
-
-  const stripeWidth = 10;
-  const segments = [];
-  for (let index = 0; index < taskGroup.length; index += 1) {
-    const start = index * stripeWidth;
-    const end = start + stripeWidth;
-    segments.push(`${taskGroup[index].color.replace("rgb(", "rgba(").replace(")", `, ${alpha})`)} ${start}px ${end}px`);
-  }
-
-  return `repeating-linear-gradient(135deg, ${segments.join(", ")})`;
+function getLatestPlanNode(nodes) {
+  if (!Array.isArray(nodes) || !nodes.length) return null;
+  return [...nodes]
+    .map((node, index) => ({
+      ...node,
+      nodeDate: node.nodeDate ?? node.node_date ?? "",
+      sortOrder: Number(node.sortOrder ?? node.sort_order ?? index)
+    }))
+    .sort((left, right) => {
+      const dateDiff = String(left.nodeDate).localeCompare(String(right.nodeDate));
+      if (dateDiff !== 0) return dateDiff;
+      return left.sortOrder - right.sortOrder;
+    })
+    .at(-1) ?? null;
 }
 
-function mixTaskColors(taskGroup, alpha = 0.78) {
-  if (!taskGroup.length) return "rgba(255,255,255,0.18)";
-  const totals = taskGroup.reduce(
-    (acc, item) => {
-      const numbers = item.color.match(/\d+/g)?.map(Number) ?? [255, 255, 255];
-      return {
-        r: acc.r + (numbers[0] ?? 255),
-        g: acc.g + (numbers[1] ?? 255),
-        b: acc.b + (numbers[2] ?? 255)
-      };
-    },
-    { r: 0, g: 0, b: 0 }
-  );
-  const count = taskGroup.length;
-  return `rgba(${Math.round(totals.r / count)}, ${Math.round(totals.g / count)}, ${Math.round(totals.b / count)}, ${alpha})`;
+function buildPlanSnapshot(plan, nodes) {
+  const latestNode = getLatestPlanNode(nodes);
+  const currentStatus = latestNode?.status ?? "active";
+  const currentProgress = clampProgress(latestNode?.progressValue ?? latestNode?.progress_value ?? 0);
+  const completedAt = currentStatus === "done" ? plan.completed_at ?? latestNode?.nodeDate ?? latestNode?.node_date ?? null : null;
+
+  return {
+    latestNode,
+    currentStatus,
+    currentProgress,
+    completedAt
+  };
+}
+
+function buildPlanSegmentFill(color, progress, status) {
+  const clampedProgress = clampProgress(progress);
+  if (status === "inactive") return "transparent";
+
+  const baseWhite = status === "active" ? "rgba(255, 255, 255, 0.34)" : "rgba(255, 255, 255, 0.88)";
+  const tintStrength = status === "active" ? clampedProgress * 0.72 : clampedProgress;
+  const whiteStrength = Math.max(0, 100 - tintStrength);
+
+  return `color-mix(in srgb, ${color} ${tintStrength}%, ${baseWhite} ${whiteStrength}%)`;
 }
 
 function getTaskDurationMinutes(task) {
   return Math.max(1, task.endMinuteInDay - task.startMinuteInDay);
 }
 
-function buildTimelineSegments(taskGroup) {
+function getTaskFontSize(label, heightPx) {
+  return Math.max(
+    6,
+    Math.min(11, heightPx * 0.42, ((timelineDayWidth - 14) / Math.max(label.length, 2)) * 1.85)
+  );
+}
+
+function isTaskContainedBy(task, otherTask) {
+  if (task.id === otherTask.id) return false;
+  return (
+    otherTask.startMinuteInDay <= task.startMinuteInDay &&
+    otherTask.endMinuteInDay >= task.endMinuteInDay &&
+    getTaskDurationMinutes(otherTask) > getTaskDurationMinutes(task)
+  );
+}
+
+function findTaskContainer(task, taskGroup) {
+  const candidates = taskGroup.filter((otherTask) => isTaskContainedBy(task, otherTask));
+  if (!candidates.length) return null;
+  return candidates.sort((left, right) => getTaskDurationMinutes(left) - getTaskDurationMinutes(right))[0];
+}
+
+function buildTimelineOverlapMarkers(taskGroup) {
   const points = [0, 24 * 60];
 
   taskGroup.forEach((task) => {
@@ -386,34 +445,201 @@ function buildTimelineSegments(taskGroup) {
       const activeTasks = taskGroup.filter(
         (task) => task.startMinuteInDay < nextPoint && task.endMinuteInDay > point
       );
-      if (!activeTasks.length) return null;
+      if (activeTasks.length < 2) return null;
 
-      const uniqueLabels = [...new Set(activeTasks.map((task) => task.label))];
-      const sharedTask = activeTasks.length === 1 ? activeTasks[0] : null;
-      const label = sharedTask ? sharedTask.label : uniqueLabels.join("-交叉-");
-      const durationMinutes = nextPoint - point;
-      const fontSize = Math.max(
-        8,
-        Math.min(
-          11,
-          durationMinutes >= 24 ? 11 : durationMinutes >= 14 ? 10 : 9,
-          ((timelineDayWidth - 14) / Math.max(label.length, 2)) * 1.85
-        )
-      );
+      const hasContainment = activeTasks.some((task) => activeTasks.some((otherTask) => isTaskContainedBy(task, otherTask)));
+      if (hasContainment) return null;
 
       return {
         key: `${point}-${nextPoint}`,
         topPx: (point / 60) * timelineRowHeight,
         heightPx: Math.max(4, ((nextPoint - point) / 60) * timelineRowHeight),
-        color: mixTaskColors(activeTasks, activeTasks.length > 1 ? 0.86 : 0.78),
-        isOverlap: activeTasks.length > 1,
         tasks: activeTasks,
-        label,
-        fontSize,
-        scaleX: Math.min(1, (timelineDayWidth - 14) / Math.max(label.length * fontSize * 0.72, 1))
+        background: `repeating-linear-gradient(135deg, ${activeTasks
+          .map((item, markerIndex) => `${item.color} ${markerIndex * 10}px ${(markerIndex + 1) * 10}px`)
+          .join(", ")})`
       };
     })
     .filter(Boolean);
+}
+
+function buildTimelineEventCards(taskGroup) {
+  const sortedTasks = [...taskGroup].sort((left, right) => {
+    const startDiff = left.startMinuteInDay - right.startMinuteInDay;
+    if (startDiff !== 0) return startDiff;
+    return getTaskDurationMinutes(right) - getTaskDurationMinutes(left);
+  });
+
+  return sortedTasks.map((task) => {
+    const container = findTaskContainer(task, sortedTasks);
+    const isFutureSegment = task.dayOffset > 0;
+    let eventOpacity = 0.52;
+    if (task.nature === "core") eventOpacity = 1;
+    if (task.nature === "non_core") eventOpacity = 0.74;
+    if (task.nature === "support") eventOpacity = 0.46;
+    if (isFutureSegment) eventOpacity *= 0.66;
+
+    const heightPx = Math.max(6, ((task.endMinuteInDay - task.startMinuteInDay) / 60) * timelineRowHeight);
+    const fontSize = getTaskFontSize(task.label, heightPx);
+
+    return {
+      ...task,
+      containerId: container?.id ?? null,
+      isNested: Boolean(container),
+      topPx: (task.startMinuteInDay / 60) * timelineRowHeight,
+      heightPx,
+      fontSize,
+      eventOpacity,
+      zIndex: container ? 7 : 4
+    };
+  });
+}
+
+function expandEventOccurrencesForStats(events, rangeStart, rangeEnd) {
+  const occurrences = [];
+
+  events.forEach((event) => {
+    const startAt = parseLocalDateTime(event.start_at);
+    const endAt = parseLocalDateTime(event.end_at);
+    const durationMs = Math.max(0, endAt.getTime() - startAt.getTime());
+    const repeatUntil = event.repeat_until ? new Date(`${event.repeat_until}T23:59:59`) : null;
+
+    const pushOccurrence = (occurrenceStart) => {
+      const occurrenceEnd = new Date(occurrenceStart.getTime() + durationMs);
+      if (occurrenceEnd <= rangeStart || occurrenceStart >= rangeEnd) return;
+      occurrences.push({
+        ...event,
+        clippedStart: new Date(Math.max(occurrenceStart.getTime(), rangeStart.getTime())),
+        clippedEnd: new Date(Math.min(occurrenceEnd.getTime(), rangeEnd.getTime())),
+        durationMs
+      });
+    };
+
+    if (event.repeat_type === "none") {
+      pushOccurrence(startAt);
+      return;
+    }
+
+    let cursor = new Date(startAt);
+    const safeEnd = repeatUntil ?? rangeEnd;
+
+    while (cursor <= safeEnd && cursor <= rangeEnd) {
+      pushOccurrence(cursor);
+      if (event.repeat_type === "daily") {
+        cursor = addDays(cursor, 1);
+      } else if (event.repeat_type === "weekly") {
+        cursor = addDays(cursor, 7);
+      } else if (event.repeat_type === "monthly") {
+        cursor = addMonths(cursor, 1);
+      } else {
+        break;
+      }
+    }
+  });
+
+  return occurrences.filter((event) => event.clippedEnd > event.clippedStart);
+}
+
+function buildStatsForRange(events, plans, rangeDays, now) {
+  const periodEnd = new Date(now);
+  const periodStart = new Date(periodEnd.getTime() - rangeDays * 24 * 60 * 60 * 1000);
+  const visibleEvents = expandEventOccurrencesForStats(events, periodStart, periodEnd);
+  const categoryTotals = new Map();
+  const timePoints = [
+    periodStart.getTime(),
+    periodEnd.getTime(),
+    ...visibleEvents.flatMap((event) => [event.clippedStart.getTime(), event.clippedEnd.getTime()])
+  ].sort((a, b) => a - b);
+
+  for (let index = 0; index < timePoints.length - 1; index += 1) {
+    const sliceStart = timePoints[index];
+    const sliceEnd = timePoints[index + 1];
+    if (sliceEnd <= sliceStart) continue;
+
+    const activeEvents = visibleEvents.filter(
+      (event) => event.clippedStart.getTime() <= sliceStart && event.clippedEnd.getTime() >= sliceEnd
+    );
+    if (!activeEvents.length) continue;
+
+    const dominantEvents = activeEvents.filter(
+      (event) =>
+        !activeEvents.some(
+          (otherEvent) =>
+            otherEvent !== event &&
+            otherEvent.clippedStart.getTime() <= event.clippedStart.getTime() &&
+            otherEvent.clippedEnd.getTime() >= event.clippedEnd.getTime() &&
+            (otherEvent.clippedStart.getTime() < event.clippedStart.getTime() ||
+              otherEvent.clippedEnd.getTime() > event.clippedEnd.getTime())
+        )
+    );
+
+    const effectiveEvents = dominantEvents.length ? dominantEvents : activeEvents;
+    const sliceDurationHours = (sliceEnd - sliceStart) / 3600000;
+    const sharedDurationHours = sliceDurationHours / effectiveEvents.length;
+
+    effectiveEvents.forEach((event) => {
+      const categoryLabel = event.displayMajor ?? event.major_category;
+      categoryTotals.set(categoryLabel, (categoryTotals.get(categoryLabel) ?? 0) + sharedDurationHours);
+    });
+  }
+
+  const totalHours = Math.max(1 / 60, (periodEnd.getTime() - periodStart.getTime()) / 3600000);
+  const pieSegments = [...categoryTotals.entries()]
+    .sort((left, right) => right[1] - left[1])
+    .map(([label, hours], index) => ({
+      label,
+      value: (hours / totalHours) * 100,
+      ...piePalette[index % piePalette.length]
+    }))
+    .map((segment) => ({
+      ...segment,
+      value: Math.max(1, Math.round(segment.value))
+    }));
+
+  const roundedTotal = pieSegments.reduce((sum, segment) => sum + segment.value, 0);
+  if (roundedTotal > 100 && pieSegments.length) {
+    let overflow = roundedTotal - 100;
+    for (let index = pieSegments.length - 1; index >= 0 && overflow > 0; index -= 1) {
+      const reducible = Math.max(0, pieSegments[index].value - 1);
+      const delta = Math.min(reducible, overflow);
+      pieSegments[index].value -= delta;
+      overflow -= delta;
+    }
+  }
+
+  const remaining = Math.max(0, 100 - pieSegments.reduce((sum, segment) => sum + segment.value, 0));
+  pieSegments.push({
+    label: "空白",
+    value: remaining,
+    color: "rgba(255,255,255,0.24)",
+    topStart: "#8c939d",
+    topEnd: "#5f6670",
+    sideStart: "#666c76",
+    sideEnd: "#353b45"
+  });
+
+  const started = plans.filter((plan) => {
+    const startTime = parseLocalDate(plan.start_date).getTime();
+    return startTime >= periodStart.getTime() && startTime <= periodEnd.getTime();
+  }).length;
+  const completed = plans.filter((plan) => {
+    if (!plan.completedAt) return false;
+    const completedTime = parseLocalDate(plan.completedAt).getTime();
+    return completedTime >= periodStart.getTime() && completedTime <= periodEnd.getTime();
+  }).length;
+  const remainingPlans = plans.filter((plan) => {
+    const startTime = parseLocalDate(plan.start_date).getTime();
+    return startTime <= periodEnd.getTime() && plan.currentStatus !== "done";
+  }).length;
+
+  return {
+    pieSegments,
+    planStats: {
+      started,
+      completed,
+      remaining: remainingPlans
+    }
+  };
 }
 
 function sanitizeEventForMode(event, mode) {
@@ -919,6 +1145,7 @@ export default function MainProjectPage({ projects, bootstrap, editorKey, viewer
   const planScrollRef = useRef(null);
   const hoverCloseTimerRef = useRef(null);
   const [planScale, setPlanScale] = useState("day");
+  const [statsRangeDays, setStatsRangeDays] = useState(7);
   const [eventCategoryFilter, setEventCategoryFilter] = useState("全部大类");
   const [planCategoryFilter, setPlanCategoryFilter] = useState("全部大类");
   const [showInactivePlanRows, setShowInactivePlanRows] = useState(false);
@@ -966,14 +1193,12 @@ export default function MainProjectPage({ projects, bootstrap, editorKey, viewer
     minorInput: "",
     taskName: "",
     startDate: defaultPlanDate,
-    status: "active",
-    progress: "0",
     expectedDueDate: "",
     completedAt: "",
     permissionLevel: "0",
     color: "#badeff",
     note: "",
-    nodes: []
+    nodes: [createPlanNodeDraft({ nodeDate: defaultPlanDate, status: "active", progressValue: "0" })]
   }));
 
   useEffect(() => {
@@ -1272,10 +1497,14 @@ export default function MainProjectPage({ projects, bootstrap, editorKey, viewer
       bootstrap.plans
         .map((plan) => sanitizePlanForMode(plan, accessLevel))
         .filter(Boolean)
-        .map((plan) => ({
-          ...plan,
-          nodes: planNodesByPlanId.get(plan.id) ?? []
-        })),
+        .map((plan) => {
+          const nodes = planNodesByPlanId.get(plan.id) ?? [];
+          return {
+            ...plan,
+            nodes,
+            ...buildPlanSnapshot(plan, nodes)
+          };
+        }),
     [accessLevel, bootstrap.plans, planNodesByPlanId]
   );
 
@@ -1291,11 +1520,19 @@ export default function MainProjectPage({ projects, bootstrap, editorKey, viewer
   );
   const editablePlans = useMemo(
     () =>
-      bootstrap.plans.map((plan) => ({
-        ...plan,
-        nodes: planNodesByPlanId.get(plan.id) ?? [],
-        anchorTime: getPlanAnchorTime(plan)
-      })),
+      bootstrap.plans.map((plan) => {
+        const nodes = planNodesByPlanId.get(plan.id) ?? [];
+        const snapshot = buildPlanSnapshot(plan, nodes);
+        return {
+          ...plan,
+          nodes,
+          ...snapshot,
+          anchorTime: getPlanAnchorTime({
+            ...plan,
+            completed_at: snapshot.completedAt
+          })
+        };
+      }),
     [bootstrap.plans, planNodesByPlanId]
   );
 
@@ -1324,6 +1561,19 @@ export default function MainProjectPage({ projects, bootstrap, editorKey, viewer
         : visiblePlans.filter((plan) => plan.displayMajor === planCategoryFilter),
     [planCategoryFilter, visiblePlans]
   );
+
+  const statsData = useMemo(() => {
+    const nowDate = new Date(
+      beijingNow.year,
+      beijingNow.month - 1,
+      beijingNow.day,
+      beijingNow.hour,
+      beijingNow.minute,
+      0,
+      0
+    );
+    return buildStatsForRange(visibleEvents, visiblePlans, statsRangeDays, nowDate);
+  }, [beijingNow.day, beijingNow.hour, beijingNow.minute, beijingNow.month, beijingNow.year, statsRangeDays, visibleEvents, visiblePlans]);
 
   useEffect(() => {
     if (!eventCategoryOptions.includes(eventCategoryFilter)) {
@@ -1477,14 +1727,12 @@ export default function MainProjectPage({ projects, bootstrap, editorKey, viewer
       minorInput: "",
       taskName: "",
       startDate: defaultPlanDate,
-      status: "active",
-      progress: "0",
       expectedDueDate: "",
       completedAt: "",
       permissionLevel: "0",
       color: "#badeff",
       note: "",
-      nodes: []
+      nodes: [createPlanNodeDraft({ nodeDate: defaultPlanDate, status: "active", progressValue: "0" })]
     };
   }
 
@@ -1528,6 +1776,17 @@ export default function MainProjectPage({ projects, bootstrap, editorKey, viewer
     const minorOptions = hasMajor ? planCategoryCatalog.minorMap.get(plan.major_category) ?? [] : [];
     const hasMinor = minorOptions.includes(plan.minor_category);
 
+    const normalizedNodes = normalizePlanNodeDrafts(plan.nodes ?? []);
+    const initialNodes = normalizedNodes.length
+      ? normalizedNodes
+      : [
+          createPlanNodeDraft({
+            nodeDate: plan.start_date,
+            status: plan.current_status ?? "active",
+            progressValue: String(plan.current_progress ?? 0)
+          })
+        ];
+
     return {
       majorMode: hasMajor ? "existing" : NEW_OPTION,
       majorSelect: hasMajor ? plan.major_category : NEW_OPTION,
@@ -1537,14 +1796,12 @@ export default function MainProjectPage({ projects, bootstrap, editorKey, viewer
       minorInput: hasMinor ? "" : plan.minor_category,
       taskName: plan.task_name,
       startDate: plan.start_date,
-      status: plan.status,
-      progress: String(plan.progress ?? 0),
       expectedDueDate: plan.expected_due_date ?? "",
-      completedAt: plan.completed_at ?? "",
+      completedAt: plan.completedAt ?? plan.completed_at ?? "",
       permissionLevel: String(plan.permission_level ?? 0),
       color: rgbStringToHex(plan.color),
       note: plan.note ?? "",
-      nodes: normalizePlanNodeDrafts(plan.nodes ?? []),
+      nodes: initialNodes,
       id: plan.id
     };
   }
@@ -1688,15 +1945,45 @@ export default function MainProjectPage({ projects, bootstrap, editorKey, viewer
   function addPlanNodeDraft() {
     setPlanDraft((current) => ({
       ...current,
-      nodes: [
-        ...current.nodes,
-        createPlanNodeDraft({
-          nodeDate: current.startDate || defaultPlanDate,
-          progressValue: current.progress || "0",
-          status: current.status || "active"
-        })
-      ]
+      nodes: (() => {
+        const latestNode = getLatestPlanNode(current.nodes);
+        return [
+          ...current.nodes,
+          createPlanNodeDraft({
+            nodeDate: latestNode?.nodeDate ?? latestNode?.node_date ?? current.startDate ?? defaultPlanDate,
+            progressValue: String(latestNode?.progressValue ?? latestNode?.progress_value ?? 0),
+            status: latestNode?.status ?? "active"
+          })
+        ];
+      })()
     }));
+  }
+
+  function syncFirstPlanNodeDate(nextStartDate) {
+    setPlanDraft((current) => {
+      if (!current.nodes.length) {
+        return {
+          ...current,
+          startDate: nextStartDate,
+          nodes: [createPlanNodeDraft({ nodeDate: nextStartDate, status: "active", progressValue: "0" })]
+        };
+      }
+
+      const sortedNodes = normalizePlanNodeDrafts(current.nodes);
+      const firstNodeId = sortedNodes[0]?.clientId;
+      return {
+        ...current,
+        startDate: nextStartDate,
+        nodes: current.nodes.map((node) =>
+          node.clientId === firstNodeId
+            ? {
+                ...node,
+                nodeDate: nextStartDate
+              }
+            : node
+        )
+      };
+    });
   }
 
   function removePlanNodeDraft(clientId) {
@@ -1718,7 +2005,18 @@ export default function MainProjectPage({ projects, bootstrap, editorKey, viewer
   }
 
   function validatePlanNodes(nodes) {
-    for (const node of normalizePlanNodeDrafts(nodes)) {
+    const normalizedNodes = [...normalizePlanNodeDrafts(nodes)].sort((left, right) => {
+      const dateDiff = left.nodeDate.localeCompare(right.nodeDate);
+      if (dateDiff !== 0) return dateDiff;
+      return left.clientId.localeCompare(right.clientId);
+    });
+    if (!normalizedNodes.length) {
+      return "每个计划至少需要一个节点。";
+    }
+    if (normalizedNodes[0].nodeDate !== planDraft.startDate) {
+      return "第一个节点必须与计划起始日期保持同日。";
+    }
+    for (const node of normalizedNodes) {
       if (!node.title.trim()) {
         return "每个计划节点都需要填写节点名称。";
       }
@@ -1784,7 +2082,6 @@ export default function MainProjectPage({ projects, bootstrap, editorKey, viewer
     const majorCategory = getDraftMajorValue(planDraft);
     const minorCategory = getDraftMinorValue(planDraft);
     const taskName = planDraft.taskName.trim();
-    const numericProgress = Number(planDraft.progress);
 
     if (!majorCategory || !minorCategory || !taskName) {
       setDialogError("请先完整填写大类、小类与计划名称。");
@@ -1795,13 +2092,9 @@ export default function MainProjectPage({ projects, bootstrap, editorKey, viewer
       setDialogError("请填写计划起始日期。");
       return;
     }
-
-    if (Number.isNaN(numericProgress) || numericProgress < 0 || numericProgress > 100) {
-      setDialogError("计划进度需要是 0 到 100 之间的数字。");
-      return;
-    }
-
-    if (planDraft.status === "done" && !planDraft.completedAt) {
+    const serializedNodes = serializePlanNodes(planDraft.nodes);
+    const latestNode = getLatestPlanNode(serializedNodes);
+    if (latestNode?.status === "done" && !planDraft.completedAt) {
       setDialogError("已完成计划需要填写完成日期。");
       return;
     }
@@ -1819,14 +2112,12 @@ export default function MainProjectPage({ projects, bootstrap, editorKey, viewer
         minor_category: minorCategory,
         task_name: taskName,
         start_date: planDraft.startDate,
-        status: planDraft.status,
-        progress: numericProgress,
         expected_due_date: planDraft.expectedDueDate || null,
-        completed_at: planDraft.status === "done" ? planDraft.completedAt || null : null,
+        completed_at: latestNode?.status === "done" ? planDraft.completedAt || null : null,
         permission_level: Number(planDraft.permissionLevel),
         color: hexToRgbString(planDraft.color),
         note: planDraft.note.trim(),
-        nodes: serializePlanNodes(planDraft.nodes)
+        nodes: serializedNodes
       }
     });
   }
@@ -1878,7 +2169,6 @@ export default function MainProjectPage({ projects, bootstrap, editorKey, viewer
     const majorCategory = getDraftMajorValue(planDraft);
     const minorCategory = getDraftMinorValue(planDraft);
     const taskName = planDraft.taskName.trim();
-    const numericProgress = Number(planDraft.progress);
 
     if (!planDraft.id) {
       setDialogError("未找到需要编辑的计划对象。");
@@ -1892,11 +2182,9 @@ export default function MainProjectPage({ projects, bootstrap, editorKey, viewer
       setDialogError("请填写计划起始日期。");
       return;
     }
-    if (Number.isNaN(numericProgress) || numericProgress < 0 || numericProgress > 100) {
-      setDialogError("计划进度需要是 0 到 100 之间的数字。");
-      return;
-    }
-    if (planDraft.status === "done" && !planDraft.completedAt) {
+    const serializedNodes = serializePlanNodes(planDraft.nodes);
+    const latestNode = getLatestPlanNode(serializedNodes);
+    if (latestNode?.status === "done" && !planDraft.completedAt) {
       setDialogError("已完成计划需要填写完成日期。");
       return;
     }
@@ -1916,14 +2204,12 @@ export default function MainProjectPage({ projects, bootstrap, editorKey, viewer
         minor_category: minorCategory,
         task_name: taskName,
         start_date: planDraft.startDate,
-        status: planDraft.status,
-        progress: numericProgress,
         expected_due_date: planDraft.expectedDueDate || null,
-        completed_at: planDraft.status === "done" ? planDraft.completedAt || null : null,
+        completed_at: latestNode?.status === "done" ? planDraft.completedAt || null : null,
         permission_level: Number(planDraft.permissionLevel),
         color: hexToRgbString(planDraft.color),
         note: planDraft.note.trim(),
-        nodes: serializePlanNodes(planDraft.nodes)
+        nodes: serializedNodes
       }
     });
   }
@@ -2025,7 +2311,7 @@ export default function MainProjectPage({ projects, bootstrap, editorKey, viewer
         }
 
         if (currentSelectorEntity === "plan" && filter.kind === "status") {
-          return record.status === filter.value;
+          return record.currentStatus === filter.value;
         }
 
         if (currentSelectorEntity === "event" && filter.kind === "nature") {
@@ -2138,9 +2424,11 @@ export default function MainProjectPage({ projects, bootstrap, editorKey, viewer
 
   const sortedPlans = useMemo(() => {
     const stateOrder = { primary: 0, active: 1, inactive: 2, done: 3 };
-    const visiblePlanRows = showInactivePlanRows ? filteredPlans : filteredPlans.filter((plan) => plan.status !== "inactive");
+    const visiblePlanRows = showInactivePlanRows
+      ? filteredPlans
+      : filteredPlans.filter((plan) => plan.currentStatus !== "inactive");
     return [...visiblePlanRows].sort((a, b) => {
-      const stateDiff = (stateOrder[a.status] ?? 9) - (stateOrder[b.status] ?? 9);
+      const stateDiff = (stateOrder[a.currentStatus] ?? 9) - (stateOrder[b.currentStatus] ?? 9);
       if (stateDiff !== 0) return stateDiff;
       return a.start_date.localeCompare(b.start_date);
     });
@@ -2193,6 +2481,7 @@ export default function MainProjectPage({ projects, bootstrap, editorKey, viewer
   const isSelectorDialog = activeDialog === "event-pick" || activeDialog === "plan-pick";
   const activeEventRecord = eventDraft.id ? editableEvents.find((item) => item.id === eventDraft.id) ?? null : null;
   const activePlanRecord = planDraft.id ? editablePlans.find((item) => item.id === planDraft.id) ?? null : null;
+  const planDraftLatestNode = useMemo(() => getLatestPlanNode(planDraft.nodes), [planDraft.nodes]);
 
   return (
     <main className={`lepid-eye-shell ${isDarkMode ? "dark" : "light"}`}>
@@ -2425,9 +2714,10 @@ export default function MainProjectPage({ projects, bootstrap, editorKey, viewer
                 {sortedPlans.map((plan) => {
                   const startDate = parseLocalDate(plan.start_date);
                   const expectedDueDate = plan.expected_due_date ? parseLocalDate(plan.expected_due_date) : null;
-                  const completedAt = plan.completed_at ? parseLocalDate(plan.completed_at) : null;
+                  const completedAt = plan.completedAt ? parseLocalDate(plan.completedAt) : null;
                   const today = new Date(beijingNow.year, beijingNow.month - 1, beijingNow.day);
-                  const isRunningState = plan.status === "primary" || plan.status === "active" || plan.status === "inactive";
+                  const isRunningState =
+                    plan.currentStatus === "primary" || plan.currentStatus === "active" || plan.currentStatus === "inactive";
                   const effectiveStartDate = startDate > today ? today : startDate;
                   const displayEndDate = isRunningState ? today : completedAt ?? expectedDueDate ?? startDate;
                   const planSegments = buildPlanTrackSegments(plan, displayEndDate);
@@ -2440,11 +2730,11 @@ export default function MainProjectPage({ projects, bootstrap, editorKey, viewer
                     lines: [
                       `大类：${plan.displayMajor}`,
                       `小类：${plan.displayMinor}`,
-                      `状态：${statusLabel(plan.status)}`,
-                      `进度：${clampProgress(plan.progress)}%`,
+                      `状态：${statusLabel(plan.currentStatus)}`,
+                      `进度：${plan.currentProgress}%`,
                       `起始：${plan.start_date}`,
                       `截止：${plan.expected_due_date ?? "未设置"}`,
-                      `完成：${plan.status === "done" ? plan.completed_at ?? "未记录" : "未完成"}`,
+                      `完成：${plan.currentStatus === "done" ? plan.completedAt ?? "未记录" : "未完成"}`,
                       plan.displayNote || "无备注"
                     ],
                     editTarget: isCreator ? { entity: "plan", id: plan.id } : null
@@ -2457,12 +2747,12 @@ export default function MainProjectPage({ projects, bootstrap, editorKey, viewer
                       style={{
                         gridTemplateColumns: `${planLabelWidth}px repeat(${planColumnCount}, ${planUnitWidth}px)`
                       }}
-                    >
-                      <div
-                        className={`plan-label ${mapPlanState(plan.status)}`}
-                        style={{ "--plan-color": plan.color }}
-                        onMouseEnter={(event) => openHoverCard(event, planHoverDetail)}
-                        onMouseMove={moveHoverCard}
+                      >
+                        <div
+                          className={`plan-label ${mapPlanState(plan.currentStatus)}`}
+                          style={{ "--plan-color": plan.color }}
+                          onMouseEnter={(event) => openHoverCard(event, planHoverDetail)}
+                          onMouseMove={moveHoverCard}
                         onMouseLeave={closeHoverCard}
                       >
                         <strong>{plan.displayTaskName}</strong>
@@ -2490,16 +2780,17 @@ export default function MainProjectPage({ projects, bootstrap, editorKey, viewer
                                 left: `${segmentLeft}px`,
                                 width: `${segmentWidth}px`,
                                 "--plan-color": plan.color,
-                                "--plan-progress": `${clampProgress(segment.progress)}%`
+                                "--plan-segment-fill": buildPlanSegmentFill(
+                                  plan.color,
+                                  segment.progress,
+                                  segment.status
+                                )
                               }}
-                            >
-                              <div className="plan-bar-remaining" />
-                              <div className="plan-bar-progress" />
-                            </div>
+                            />
                           );
                         })}
                         <div className="plan-node start" style={{ left: `${startCenter - 9}px`, "--plan-color": plan.color }} />
-                        {plan.status === "done" && (
+                        {plan.currentStatus === "done" && (
                           <div className="plan-node end" style={{ left: `${endCenter - 9}px`, "--plan-color": plan.color }} />
                         )}
                       </div>
@@ -2514,13 +2805,25 @@ export default function MainProjectPage({ projects, bootstrap, editorKey, viewer
             <article className="panel stats-panel">
               <div className="panel-head">
                 <h2>统计</h2>
+                <div className="scale-switch" role="tablist" aria-label="统计周期">
+                  {statsRangeOptions.map((option) => (
+                    <button
+                      key={option.value}
+                      type="button"
+                      className={`scale-btn ${statsRangeDays === option.value ? "active" : ""}`}
+                      onClick={() => setStatsRangeDays(option.value)}
+                    >
+                      {option.label}
+                    </button>
+                  ))}
+                </div>
               </div>
 
               <div className="stats-content">
                 <div className="pie-block">
-                  <PieDonutCard segments={bootstrap.stats.pieSegments} isDarkMode={isDarkMode} />
+                  <PieDonutCard segments={statsData.pieSegments} isDarkMode={isDarkMode} />
                   <div className="pie-list">
-                    {bootstrap.stats.pieSegments.map((segment) => (
+                    {statsData.pieSegments.map((segment) => (
                       <div key={segment.label} className="pie-item">
                         <span className="pie-dot" style={{ background: segment.color }} />
                         <span>{segment.label}</span>
@@ -2533,15 +2836,15 @@ export default function MainProjectPage({ projects, bootstrap, editorKey, viewer
                 <div className="stat-list">
                   <div className="stat-card">
                     <span>新开启计划数</span>
-                    <strong>{bootstrap.stats.planStats.started}</strong>
+                    <strong>{statsData.planStats.started}</strong>
                   </div>
                   <div className="stat-card">
                     <span>已完成计划数</span>
-                    <strong>{bootstrap.stats.planStats.completed}</strong>
+                    <strong>{statsData.planStats.completed}</strong>
                   </div>
                   <div className="stat-card">
                     <span>剩余计划数</span>
-                    <strong>{bootstrap.stats.planStats.remaining}</strong>
+                    <strong>{statsData.planStats.remaining}</strong>
                   </div>
                 </div>
               </div>
@@ -2790,7 +3093,7 @@ export default function MainProjectPage({ projects, bootstrap, editorKey, viewer
                     selectorGroups.map((group) => {
                       const visibleItems =
                         currentSelectorEntity === "plan" && !(selectorShowInactiveGroups[group.label] ?? false)
-                          ? group.items.filter((record) => record.status === "primary" || record.status === "active")
+                          ? group.items.filter((record) => record.currentStatus === "primary" || record.currentStatus === "active")
                           : group.items;
 
                       return (
@@ -2850,7 +3153,7 @@ export default function MainProjectPage({ projects, bootstrap, editorKey, viewer
                                       <>
                                         <span>{record.minor_category} · {record.task_name}</span>
                                         <span>开始：{record.start_date}</span>
-                                        <span>状态：{statusLabel(record.status)}</span>
+                                        <span>状态：{statusLabel(record.currentStatus)}</span>
                                       </>
                                     )}
                                   </div>
@@ -3095,7 +3398,7 @@ export default function MainProjectPage({ projects, bootstrap, editorKey, viewer
                       <span>{activePlanRecord.task_name}</span>
                       <span>{activePlanRecord.major_category} · {activePlanRecord.minor_category}</span>
                       <span>开始：{activePlanRecord.start_date}</span>
-                      <span>状态：{statusLabel(activePlanRecord.status)}</span>
+                      <span>状态：{statusLabel(activePlanRecord.currentStatus)}</span>
                     </div>
                   </details>
                 ) : null}
@@ -3177,33 +3480,7 @@ export default function MainProjectPage({ projects, bootstrap, editorKey, viewer
                   <input
                     type="date"
                     value={planDraft.startDate}
-                    onChange={(event) => setPlanDraft((current) => ({ ...current, startDate: event.target.value }))}
-                  />
-                </label>
-
-                <label className="dialog-field">
-                  <span>状态</span>
-                  <select
-                    value={planDraft.status}
-                    onChange={(event) => setPlanDraft((current) => ({ ...current, status: event.target.value }))}
-                  >
-                    {PLAN_STATUS_OPTIONS.map((option) => (
-                      <option key={option.value} value={option.value}>
-                        {option.label}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-
-                <label className="dialog-field">
-                  <span>当前进度</span>
-                  <input
-                    type="number"
-                    min="0"
-                    max="100"
-                    value={planDraft.progress}
-                    onChange={(event) => setPlanDraft((current) => ({ ...current, progress: event.target.value }))}
-                    placeholder="0 - 100"
+                    onChange={(event) => syncFirstPlanNodeDate(event.target.value)}
                   />
                 </label>
 
@@ -3216,7 +3493,7 @@ export default function MainProjectPage({ projects, bootstrap, editorKey, viewer
                   />
                 </label>
 
-                {planDraft.status === "done" && (
+                {planDraftLatestNode?.status === "done" && (
                   <label className="dialog-field">
                     <span>完成日期</span>
                     <input
@@ -3267,7 +3544,7 @@ export default function MainProjectPage({ projects, bootstrap, editorKey, viewer
                   <div className="plan-node-section-head">
                     <div>
                       <strong>计划节点</strong>
-                      <p>节点记录计划在某一天起进入的状态与进度，用来定义轨道分段。</p>
+                      <p>节点记录计划从某一天开始进入的新状态与进度，最新节点就是当前视图。</p>
                     </div>
                     <button type="button" className="plan-node-add-btn" onClick={addPlanNodeDraft}>
                       新增节点
@@ -4114,7 +4391,6 @@ export default function MainProjectPage({ projects, bootstrap, editorKey, viewer
           left: 6px;
           right: 6px;
           border-radius: 999px;
-          pointer-events: none;
           background:
             linear-gradient(180deg, rgba(255, 255, 255, 0.18), rgba(255, 255, 255, 0.04)),
             repeating-linear-gradient(
@@ -4155,8 +4431,19 @@ export default function MainProjectPage({ projects, bootstrap, editorKey, viewer
         }
 
         .timeline-day-overlay .timeline-task,
-        .timeline-day-overlay .timeline-repeat-fill {
+        .timeline-day-overlay .timeline-repeat-fill,
+        .timeline-day-overlay .timeline-overlap-marker {
           pointer-events: auto;
+        }
+
+        .timeline-task.nested {
+          left: 12px;
+          right: 12px;
+          border-color: rgba(255, 255, 255, 0.34);
+          box-shadow:
+            inset 0 1px 0 rgba(255, 255, 255, 0.18),
+            0 10px 22px rgba(0, 0, 0, 0.18),
+            0 0 18px rgba(186, 222, 255, 0.12);
         }
 
         .timeline-task-text {
@@ -4243,6 +4530,14 @@ export default function MainProjectPage({ projects, bootstrap, editorKey, viewer
 
         .light .timeline-repeat-fill {
           box-shadow: inset 0 0 0 1px rgba(70, 96, 142, 0.14);
+        }
+
+        .light .timeline-task.nested {
+          border-color: rgba(70, 96, 142, 0.32);
+          box-shadow:
+            inset 0 1px 0 rgba(255, 255, 255, 0.5),
+            0 8px 18px rgba(57, 78, 117, 0.14),
+            0 0 16px rgba(125, 177, 255, 0.12);
         }
 
         .light .timeline-repeat-label {
@@ -4376,11 +4671,12 @@ export default function MainProjectPage({ projects, bootstrap, editorKey, viewer
           height: 10px;
           border-radius: 999px;
           border: 1px solid rgba(255, 255, 255, 0.16);
-          overflow: hidden;
-          display: flex;
+          background: var(--plan-segment-fill);
           z-index: 2;
-          transition: transform 0.18s ease, box-shadow 0.18s ease, filter 0.18s ease;
           transform: translateY(-50%);
+          box-shadow:
+            inset 0 1px 0 rgba(255, 255, 255, 0.2),
+            0 0 0 1px rgba(255, 255, 255, 0.02);
         }
 
         .plan-bar.primary {
@@ -4388,50 +4684,19 @@ export default function MainProjectPage({ projects, bootstrap, editorKey, viewer
         }
 
         .plan-bar.active {
-          opacity: 1;
+          opacity: 0.92;
           border-color: rgba(255, 255, 255, 0.22);
         }
 
         .plan-bar.inactive {
           border: 1px dashed rgba(255, 255, 255, 0.42);
           background: transparent;
-          opacity: 1;
+          box-shadow: none;
+          opacity: 0.78;
         }
 
         .plan-bar.done {
           opacity: 0.78;
-        }
-
-        .plan-bar-progress,
-        .plan-bar-remaining {
-          height: 100%;
-        }
-
-        .plan-bar-progress {
-          width: var(--plan-progress);
-          background: var(--plan-color);
-          box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.2);
-        }
-
-        .plan-bar-remaining {
-          width: calc(100% - var(--plan-progress));
-          background: rgba(255, 255, 255, 0.86);
-        }
-
-        .plan-bar.active .plan-bar-progress {
-          background: color-mix(in srgb, var(--plan-color) 68%, transparent 32%);
-        }
-
-        .plan-bar.active .plan-bar-remaining {
-          background: rgba(255, 255, 255, 0.26);
-        }
-
-        .plan-bar.inactive .plan-bar-progress {
-          display: none;
-        }
-
-        .plan-bar.inactive .plan-bar-remaining {
-          display: none;
         }
 
         .plan-node {
@@ -4461,13 +4726,6 @@ export default function MainProjectPage({ projects, bootstrap, editorKey, viewer
             16px 0 26px rgba(0, 0, 0, 0.16),
             inset 0 1px 0 rgba(255, 255, 255, 0.08),
             0 0 18px rgba(186, 222, 255, 0.12);
-        }
-
-        .plan-bar:hover {
-          transform: scaleY(1.18);
-          box-shadow:
-            0 0 16px rgba(186, 222, 255, 0.16),
-            0 6px 18px rgba(0, 0, 0, 0.2);
         }
 
         .plan-node:hover {
@@ -5401,66 +5659,81 @@ function FragmentRow({ hour, days, currentHour }) {
 
 function TimelineDayColumn({ day, dayIndex, taskRows, isCreator, onHover, onHoverMove, onHoverEnd }) {
   const dayTasks = taskRows.filter((item) => item.dayIndex === dayIndex);
-  const timelineSegments = buildTimelineSegments(dayTasks);
+  const timelineCards = buildTimelineEventCards(dayTasks);
+  const overlapMarkers = buildTimelineOverlapMarkers(dayTasks);
 
   return (
     <div className={`timeline-day-overlay ${day.isToday ? "today" : ""}`} style={{ left: `${dayIndex * timelineDayWidth}px` }}>
-      {timelineSegments.map((segment) => {
-        const primaryTask = segment.tasks[0] ?? null;
-        const isFutureSegment = day.offset > 0;
-        let eventOpacity = 0.52;
-        if (primaryTask?.nature === "core") eventOpacity = 1;
-        if (primaryTask?.nature === "non_core") eventOpacity = 0.74;
-        if (primaryTask?.nature === "support") eventOpacity = 0.46;
-        if (isFutureSegment) eventOpacity *= 0.66;
-
-        const heightPx = Math.max(6, segment.heightPx);
-        const fontSize = Math.max(6, Math.min(11, heightPx * 0.42));
-
-        const segmentHoverDetail = {
+      {timelineCards.map((task) => {
+        const taskHoverDetail = {
           type: "event",
-          title: segment.isOverlap ? "事务重叠" : primaryTask?.label ?? segment.label,
+          title: task.label,
           lines: [
-            `事务分类：${segment.tasks.map((item) => `${item.majorCategory} · ${item.minorCategory}`).join(" / ")}`,
-            ...segment.tasks.map((item) => `起始时间：${item.originalStart}`),
-            segment.tasks.map((item) => item.note).filter(Boolean).join(" / ") || "无备注"
-          ],
+            `事务分类：${task.majorCategory} · ${task.minorCategory}`,
+            `起始时间：${task.originalStart}`,
+            task.originalEnd ? `结束时间：${task.originalEnd}` : null,
+            task.note || "无备注"
+          ].filter(Boolean),
           editTarget:
-            isCreator && segment.tasks.length === 1
-              ? { entity: "event", id: segment.tasks[0].sourceId }
+            isCreator
+              ? { entity: "event", id: task.sourceId }
               : null
         };
 
         return (
           <div
-            key={`${day.key}-${segment.key}`}
-            className={`timeline-task ${primaryTask?.tone ?? "mix"} ${segment.isOverlap ? "overlap-visual" : ""}`}
+            key={task.id}
+            className={`timeline-task ${task.tone ?? "mix"} ${task.isNested ? "nested" : ""}`}
             style={{
-              top: `${segment.topPx}px`,
-              height: `${heightPx}px`,
-              "--event-color": primaryTask?.color ?? "rgb(186, 222, 255)",
-              "--event-opacity": eventOpacity,
-              background: segment.isOverlap
-                ? `repeating-linear-gradient(135deg, ${segment.tasks
-                    .map((item, index) => `${item.color} ${index * 10}px ${(index + 1) * 10}px`)
-                    .join(", ")})`
-                : `color-mix(in srgb, ${primaryTask?.color ?? "rgb(186, 222, 255)"} 82%, white 18%)`
+              top: `${task.topPx}px`,
+              height: `${task.heightPx}px`,
+              zIndex: task.zIndex,
+              "--event-color": task.color ?? "rgb(186, 222, 255)",
+              "--event-opacity": task.eventOpacity
             }}
-            onMouseEnter={(event) => onHover(event, segmentHoverDetail)}
+            onMouseEnter={(event) => onHover(event, taskHoverDetail)}
             onMouseMove={onHoverMove}
             onMouseLeave={onHoverEnd}
           >
-            {!segment.isOverlap && (
-              <span
-                className="timeline-task-text"
-                style={{
-                  fontSize: `${fontSize}px`
-                }}
-              >
-                {primaryTask?.label ?? ""}
-              </span>
-            )}
+            <span
+              className="timeline-task-text"
+              style={{
+                fontSize: `${task.fontSize}px`
+              }}
+            >
+              {task.label}
+            </span>
           </div>
+        );
+      })}
+      {overlapMarkers.map((marker) => {
+        const overlapHoverDetail = {
+          type: "event",
+          title: "事务重叠",
+          lines: [
+            `事务分类：${marker.tasks.map((item) => `${item.majorCategory} · ${item.minorCategory}`).join(" / ")}`,
+            ...marker.tasks.flatMap((item) => [
+              `起始时间：${item.originalStart}`,
+              item.originalEnd ? `结束时间：${item.originalEnd}` : null
+            ]).filter(Boolean),
+            marker.tasks.map((item) => item.note).filter(Boolean).join(" / ") || "无备注"
+          ],
+          editTarget: null
+        };
+
+        return (
+          <div
+            key={`${day.key}-${marker.key}`}
+            className="timeline-overlap-marker strong"
+            style={{
+              top: `${marker.topPx}px`,
+              height: `${Math.max(4, marker.heightPx)}px`,
+              background: marker.background
+            }}
+            onMouseEnter={(event) => onHover(event, overlapHoverDetail)}
+            onMouseMove={onHoverMove}
+            onMouseLeave={onHoverEnd}
+          />
         );
       })}
     </div>
