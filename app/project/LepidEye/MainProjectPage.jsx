@@ -945,6 +945,19 @@ function formatDateField(date) {
   return `${year}-${month}-${day}`;
 }
 
+function getDurationMinutes(startAt, endAt) {
+  if (!startAt || !endAt) return 60;
+  const durationMs = new Date(endAt).getTime() - new Date(startAt).getTime();
+  return Math.max(1, Math.round(durationMs / 60000));
+}
+
+function buildEndAtFromDuration(startAt, durationMinutes) {
+  const startTime = new Date(startAt).getTime();
+  const duration = Number(durationMinutes);
+  if (!startAt || Number.isNaN(startTime) || Number.isNaN(duration) || duration <= 0) return "";
+  return formatDateTimeField(new Date(startTime + duration * 60000));
+}
+
 function hexToRgbString(value) {
   const normalized = value.replace("#", "").trim();
   if (normalized.length !== 6) return "rgb(186, 222, 255)";
@@ -1169,6 +1182,7 @@ export default function MainProjectPage({ projects, bootstrap, editorKey, viewer
   const [eventCategoryFilter, setEventCategoryFilter] = useState("全部大类");
   const [planCategoryFilter, setPlanCategoryFilter] = useState("全部大类");
   const [showInactivePlanRows, setShowInactivePlanRows] = useState(false);
+  const [showCompletedPlanRows, setShowCompletedPlanRows] = useState(false);
   const [hoverCard, setHoverCard] = useState(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [activeDialog, setActiveDialog] = useState(null);
@@ -1196,7 +1210,7 @@ export default function MainProjectPage({ projects, bootstrap, editorKey, viewer
     taskNameSelect: NEW_OPTION,
     taskNameInput: "",
     startAt: defaultEventStart,
-    endAt: defaultEventEnd,
+    durationMinutes: String(getDurationMinutes(defaultEventStart, defaultEventEnd)),
     repeatType: "none",
     repeatUntil: "",
     nature: "non_core",
@@ -1718,12 +1732,12 @@ export default function MainProjectPage({ projects, bootstrap, editorKey, viewer
       minorMode: hasDefaultMinor ? "existing" : NEW_OPTION,
       minorSelect: hasDefaultMinor ? defaultMinor : NEW_OPTION,
       minorInput: "",
-      taskNameMode: NEW_OPTION,
-      taskNameSelect: NEW_OPTION,
-      taskNameInput: "",
-      startAt: defaultEventStart,
-      endAt: defaultEventEnd,
-      repeatType: "none",
+    taskNameMode: NEW_OPTION,
+    taskNameSelect: NEW_OPTION,
+    taskNameInput: "",
+    startAt: defaultEventStart,
+    durationMinutes: String(getDurationMinutes(defaultEventStart, defaultEventEnd)),
+    repeatType: "none",
       repeatUntil: "",
       nature: "non_core",
       permissionLevel: "0",
@@ -1780,7 +1794,7 @@ export default function MainProjectPage({ projects, bootstrap, editorKey, viewer
       taskNameSelect: hasTaskName ? event.task_name : NEW_OPTION,
       taskNameInput: hasTaskName ? "" : event.task_name,
       startAt: formatDateTimeField(parseLocalDateTime(event.start_at)),
-      endAt: formatDateTimeField(parseLocalDateTime(event.end_at)),
+      durationMinutes: String(getDurationMinutes(event.start_at.replace(" ", "T"), event.end_at.replace(" ", "T"))),
       repeatType: event.repeat_type,
       repeatUntil: event.repeat_until ?? "",
       nature: event.nature,
@@ -2058,19 +2072,20 @@ export default function MainProjectPage({ projects, bootstrap, editorKey, viewer
     const majorCategory = getDraftMajorValue(eventDraft);
     const minorCategory = getDraftMinorValue(eventDraft);
     const taskName = getDraftTaskNameValue(eventDraft);
+    const endAt = buildEndAtFromDuration(eventDraft.startAt, eventDraft.durationMinutes);
 
     if (!majorCategory || !minorCategory || !taskName) {
       setDialogError("请先完整填写大类、小类与事务名称。");
       return;
     }
 
-    if (!eventDraft.startAt || !eventDraft.endAt) {
-      setDialogError("请填写事务的开始与结束时间。");
+    if (!eventDraft.startAt || !eventDraft.durationMinutes) {
+      setDialogError("请填写事务的开始时间与持续时间。");
       return;
     }
 
-    if (new Date(eventDraft.endAt).getTime() <= new Date(eventDraft.startAt).getTime()) {
-      setDialogError("结束时间需要晚于开始时间。");
+    if (!endAt) {
+      setDialogError("持续时间需要是大于 0 的分钟数。");
       return;
     }
 
@@ -2087,7 +2102,7 @@ export default function MainProjectPage({ projects, bootstrap, editorKey, viewer
         minor_category: minorCategory,
         task_name: taskName,
         start_at: eventDraft.startAt.replace("T", " ") + ":00",
-        end_at: eventDraft.endAt.replace("T", " ") + ":00",
+        end_at: endAt.replace("T", " ") + ":00",
         repeat_type: eventDraft.repeatType,
         repeat_until: eventDraft.repeatType === "none" ? null : eventDraft.repeatUntil,
         nature: eventDraft.nature,
@@ -2146,6 +2161,7 @@ export default function MainProjectPage({ projects, bootstrap, editorKey, viewer
     const majorCategory = getDraftMajorValue(eventDraft);
     const minorCategory = getDraftMinorValue(eventDraft);
     const taskName = getDraftTaskNameValue(eventDraft);
+    const endAt = buildEndAtFromDuration(eventDraft.startAt, eventDraft.durationMinutes);
 
     if (!eventDraft.id) {
       setDialogError("未找到需要编辑的事务对象。");
@@ -2155,12 +2171,12 @@ export default function MainProjectPage({ projects, bootstrap, editorKey, viewer
       setDialogError("请先完整填写大类、小类与事务名称。");
       return;
     }
-    if (!eventDraft.startAt || !eventDraft.endAt) {
-      setDialogError("请填写事务的开始与结束时间。");
+    if (!eventDraft.startAt || !eventDraft.durationMinutes) {
+      setDialogError("请填写事务的开始时间与持续时间。");
       return;
     }
-    if (new Date(eventDraft.endAt).getTime() <= new Date(eventDraft.startAt).getTime()) {
-      setDialogError("结束时间需要晚于开始时间。");
+    if (!endAt) {
+      setDialogError("持续时间需要是大于 0 的分钟数。");
       return;
     }
 
@@ -2174,7 +2190,7 @@ export default function MainProjectPage({ projects, bootstrap, editorKey, viewer
         minor_category: minorCategory,
         task_name: taskName,
         start_at: eventDraft.startAt.replace("T", " ") + ":00",
-        end_at: eventDraft.endAt.replace("T", " ") + ":00",
+        end_at: endAt.replace("T", " ") + ":00",
         repeat_type: eventDraft.repeatType,
         repeat_until: eventDraft.repeatType === "none" ? null : eventDraft.repeatUntil || null,
         nature: eventDraft.nature,
@@ -2468,15 +2484,17 @@ export default function MainProjectPage({ projects, bootstrap, editorKey, viewer
 
   const sortedPlans = useMemo(() => {
     const stateOrder = { primary: 0, active: 1, inactive: 2, done: 3 };
-    const visiblePlanRows = showInactivePlanRows
-      ? filteredPlans
-      : filteredPlans.filter((plan) => plan.currentStatus !== "inactive");
+    const visiblePlanRows = filteredPlans.filter((plan) => {
+      if (!showInactivePlanRows && plan.currentStatus === "inactive") return false;
+      if (!showCompletedPlanRows && plan.currentStatus === "done") return false;
+      return true;
+    });
     return [...visiblePlanRows].sort((a, b) => {
       const stateDiff = (stateOrder[a.currentStatus] ?? 9) - (stateOrder[b.currentStatus] ?? 9);
       if (stateDiff !== 0) return stateDiff;
       return a.start_date.localeCompare(b.start_date);
     });
-  }, [filteredPlans, showInactivePlanRows]);
+  }, [filteredPlans, showCompletedPlanRows, showInactivePlanRows]);
 
   const preparedPlanRows = useMemo(() => {
     const today = new Date(beijingNow.year, beijingNow.month - 1, beijingNow.day);
@@ -2742,7 +2760,17 @@ export default function MainProjectPage({ projects, bootstrap, editorKey, viewer
                     checked={showInactivePlanRows}
                     onChange={(event) => setShowInactivePlanRows(event.target.checked)}
                   />
+                  <span className="inline-toggle-box" aria-hidden="true" />
                   <span>展开非活跃计划</span>
+                </label>
+                <label className="inline-toggle">
+                  <input
+                    type="checkbox"
+                    checked={showCompletedPlanRows}
+                    onChange={(event) => setShowCompletedPlanRows(event.target.checked)}
+                  />
+                  <span className="inline-toggle-box" aria-hidden="true" />
+                  <span>展开已完成计划</span>
                 </label>
                 <div className="scale-switch" role="tablist" aria-label="计划轨道尺度">
                   {Object.entries(planScaleMap).map(([key, value]) => (
@@ -3344,11 +3372,13 @@ export default function MainProjectPage({ projects, bootstrap, editorKey, viewer
                 </label>
 
                 <label className="dialog-field">
-                  <span>结束时间</span>
+                  <span>持续时间（分钟）</span>
                   <input
-                    type="datetime-local"
-                    value={eventDraft.endAt}
-                    onChange={(event) => setEventDraft((current) => ({ ...current, endAt: event.target.value }))}
+                    type="number"
+                    min="1"
+                    step="1"
+                    value={eventDraft.durationMinutes}
+                    onChange={(event) => setEventDraft((current) => ({ ...current, durationMinutes: event.target.value }))}
                   />
                 </label>
 
@@ -4236,9 +4266,57 @@ export default function MainProjectPage({ projects, bootstrap, editorKey, viewer
         }
 
         .inline-toggle input {
-          width: 16px;
-          height: 16px;
-          accent-color: rgba(186, 222, 255, 0.94);
+          position: absolute;
+          opacity: 0;
+          pointer-events: none;
+        }
+
+        .inline-toggle-box {
+          width: 17px;
+          height: 17px;
+          border-radius: 6px;
+          border: 1px solid rgba(255, 255, 255, 0.16);
+          background:
+            linear-gradient(180deg, rgba(255, 255, 255, 0.08), rgba(255, 255, 255, 0.03)),
+            rgba(8, 12, 18, 0.26);
+          box-shadow:
+            inset 0 1px 0 rgba(255, 255, 255, 0.08),
+            0 4px 12px rgba(0, 0, 0, 0.14);
+          transition: all 0.22s ease;
+          position: relative;
+          flex-shrink: 0;
+        }
+
+        .inline-toggle-box::after {
+          content: "";
+          position: absolute;
+          left: 5px;
+          top: 2px;
+          width: 4px;
+          height: 8px;
+          border-right: 2px solid transparent;
+          border-bottom: 2px solid transparent;
+          transform: rotate(45deg);
+          transition: all 0.22s ease;
+        }
+
+        .inline-toggle input:checked + .inline-toggle-box {
+          border-color: rgba(186, 222, 255, 0.42);
+          background:
+            linear-gradient(180deg, rgba(214, 236, 255, 0.28), rgba(126, 182, 228, 0.14)),
+            rgba(18, 28, 42, 0.38);
+          box-shadow:
+            inset 0 1px 0 rgba(255, 255, 255, 0.14),
+            0 0 14px rgba(186, 222, 255, 0.16);
+        }
+
+        .inline-toggle input:checked + .inline-toggle-box::after {
+          border-right-color: rgba(246, 251, 255, 0.96);
+          border-bottom-color: rgba(246, 251, 255, 0.96);
+        }
+
+        .inline-toggle:hover .inline-toggle-box {
+          border-color: rgba(186, 222, 255, 0.3);
         }
 
         .scale-switch {
