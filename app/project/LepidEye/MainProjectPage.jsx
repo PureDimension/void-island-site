@@ -41,8 +41,10 @@ const PLAN_STATUS_OPTIONS = [
   { value: "primary", label: "主要推进" },
   { value: "active", label: "活跃" },
   { value: "inactive", label: "非活跃" },
-  { value: "done", label: "已完成" }
+  { value: "done", label: "已完成" },
+  { value: "abandoned", label: "已废弃" }
 ];
+const ABANDONED_PLAN_COLOR = "rgb(166, 172, 182)";
 const PERMISSION_LEVEL_OPTIONS = [
   { value: "0", label: "0 级 / 完全公开" },
   { value: "1", label: "1 级 / 名称隐藏" },
@@ -231,7 +233,12 @@ function mapPlanState(status) {
   if (status === "primary") return "primary";
   if (status === "active") return "active";
   if (status === "inactive") return "inactive";
+  if (status === "abandoned") return "abandoned";
   return "done";
+}
+
+function isPlanTerminalStatus(status) {
+  return status === "done" || status === "abandoned";
 }
 
 function clampProgress(value) {
@@ -249,6 +256,7 @@ function statusLabel(status) {
   if (status === "primary") return "主要推进";
   if (status === "active") return "活跃";
   if (status === "inactive") return "非活跃";
+  if (status === "abandoned") return "已废弃";
   return "已完成";
 }
 
@@ -324,11 +332,20 @@ function buildPlanTrackSegments(plan, displayEndDate) {
   return uniqueStates
     .map((state, index) => {
       const nextState = uniqueStates[index + 1];
-      const endDate = nextState ? nextState.startDate : displayEndDate;
+      const hideBar = state.status === "abandoned";
+      const endDate = hideBar ? state.startDate : (nextState ? nextState.startDate : displayEndDate);
+      if (hideBar) {
+        return {
+          ...state,
+          endDate,
+          hideBar
+        };
+      }
       if (endDate.getTime() <= state.startDate.getTime()) return null;
       return {
         ...state,
-        endDate
+        endDate,
+        hideBar
       };
     })
     .filter(Boolean);
@@ -354,7 +371,9 @@ function buildPlanSnapshot(plan, nodes) {
   const latestNode = getLatestPlanNode(nodes);
   const currentStatus = latestNode?.status ?? "active";
   const currentProgress = clampProgress(latestNode?.progressValue ?? latestNode?.progress_value ?? 0);
-  const completedAt = currentStatus === "done" ? plan.completed_at ?? latestNode?.nodeDate ?? latestNode?.node_date ?? null : null;
+  const completedAt = isPlanTerminalStatus(currentStatus)
+    ? plan.completed_at ?? latestNode?.nodeDate ?? latestNode?.node_date ?? null
+    : null;
 
   return {
     latestNode,
@@ -366,7 +385,7 @@ function buildPlanSnapshot(plan, nodes) {
 
 function buildPlanSegmentFill(color, progress, status) {
   const clampedProgress = clampProgress(progress);
-  if (status === "inactive") return "transparent";
+  if (status === "inactive" || status === "abandoned") return "transparent";
 
   const baseWhite = status === "active" ? "rgba(255, 255, 255, 0.34)" : "rgba(255, 255, 255, 0.88)";
   const tintStrength = status === "active" ? clampedProgress * 0.72 : clampedProgress;
@@ -624,7 +643,7 @@ function buildStatsForRange(events, plans, rangeDays, now) {
   }).length;
   const remainingPlans = plans.filter((plan) => {
     const startTime = parseLocalDate(plan.start_date).getTime();
-    return startTime <= periodEnd.getTime() && plan.currentStatus !== "done";
+    return startTime <= periodEnd.getTime() && !isPlanTerminalStatus(plan.currentStatus);
   }).length;
 
   return {
@@ -1183,6 +1202,7 @@ export default function MainProjectPage({ projects, bootstrap, editorKey, viewer
   const [planCategoryFilter, setPlanCategoryFilter] = useState("全部大类");
   const [showInactivePlanRows, setShowInactivePlanRows] = useState(false);
   const [showCompletedPlanRows, setShowCompletedPlanRows] = useState(false);
+  const [showAbandonedPlanRows, setShowAbandonedPlanRows] = useState(false);
   const [hoverCard, setHoverCard] = useState(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [activeDialog, setActiveDialog] = useState(null);
@@ -1228,7 +1248,6 @@ export default function MainProjectPage({ projects, bootstrap, editorKey, viewer
     taskName: "",
     startDate: defaultPlanDate,
     expectedDueDate: "",
-    completedAt: "",
     permissionLevel: "0",
     color: "#badeff",
     note: "",
@@ -1762,7 +1781,6 @@ export default function MainProjectPage({ projects, bootstrap, editorKey, viewer
       taskName: "",
       startDate: defaultPlanDate,
       expectedDueDate: "",
-      completedAt: "",
       permissionLevel: "0",
       color: "#badeff",
       note: "",
@@ -1831,7 +1849,6 @@ export default function MainProjectPage({ projects, bootstrap, editorKey, viewer
       taskName: plan.task_name,
       startDate: plan.start_date,
       expectedDueDate: plan.expected_due_date ?? "",
-      completedAt: plan.completedAt ?? plan.completed_at ?? "",
       permissionLevel: String(plan.permission_level ?? 0),
       color: rgbStringToHex(plan.color),
       note: plan.note ?? "",
@@ -1986,7 +2003,7 @@ export default function MainProjectPage({ projects, bootstrap, editorKey, viewer
           createPlanNodeDraft({
             nodeDate: latestNode?.nodeDate ?? latestNode?.node_date ?? current.startDate ?? defaultPlanDate,
             progressValue: String(latestNode?.progressValue ?? latestNode?.progress_value ?? 0),
-            status: latestNode?.status ?? "active"
+            status: isPlanTerminalStatus(latestNode?.status) ? "active" : (latestNode?.status ?? "active")
           })
         ];
       })()
@@ -2049,6 +2066,10 @@ export default function MainProjectPage({ projects, bootstrap, editorKey, viewer
     }
     if (normalizedNodes[0].nodeDate !== planDraft.startDate) {
       return "第一个节点必须与计划起始日期保持同日。";
+    }
+    const doneNodes = normalizedNodes.filter((node) => node.status === "done");
+    if (doneNodes.length > 1) {
+      return "计划节点中最多只能存在一个已完成节点。";
     }
     for (const node of normalizedNodes) {
       if (!node.title.trim()) {
@@ -2128,11 +2149,6 @@ export default function MainProjectPage({ projects, bootstrap, editorKey, viewer
       return;
     }
     const serializedNodes = serializePlanNodes(planDraft.nodes);
-    const latestNode = getLatestPlanNode(serializedNodes);
-    if (latestNode?.status === "done" && !planDraft.completedAt) {
-      setDialogError("已完成计划需要填写完成日期。");
-      return;
-    }
     const nodeError = validatePlanNodes(planDraft.nodes);
     if (nodeError) {
       setDialogError(nodeError);
@@ -2148,7 +2164,6 @@ export default function MainProjectPage({ projects, bootstrap, editorKey, viewer
         task_name: taskName,
         start_date: planDraft.startDate,
         expected_due_date: planDraft.expectedDueDate || null,
-        completed_at: latestNode?.status === "done" ? planDraft.completedAt || null : null,
         permission_level: Number(planDraft.permissionLevel),
         color: hexToRgbString(planDraft.color),
         note: planDraft.note.trim(),
@@ -2219,11 +2234,6 @@ export default function MainProjectPage({ projects, bootstrap, editorKey, viewer
       return;
     }
     const serializedNodes = serializePlanNodes(planDraft.nodes);
-    const latestNode = getLatestPlanNode(serializedNodes);
-    if (latestNode?.status === "done" && !planDraft.completedAt) {
-      setDialogError("已完成计划需要填写完成日期。");
-      return;
-    }
     const nodeError = validatePlanNodes(planDraft.nodes);
     if (nodeError) {
       setDialogError(nodeError);
@@ -2241,7 +2251,6 @@ export default function MainProjectPage({ projects, bootstrap, editorKey, viewer
         task_name: taskName,
         start_date: planDraft.startDate,
         expected_due_date: planDraft.expectedDueDate || null,
-        completed_at: latestNode?.status === "done" ? planDraft.completedAt || null : null,
         permission_level: Number(planDraft.permissionLevel),
         color: hexToRgbString(planDraft.color),
         note: planDraft.note.trim(),
@@ -2483,10 +2492,11 @@ export default function MainProjectPage({ projects, bootstrap, editorKey, viewer
   );
 
   const sortedPlans = useMemo(() => {
-    const stateOrder = { primary: 0, active: 1, inactive: 2, done: 3 };
+    const stateOrder = { primary: 0, active: 1, inactive: 2, abandoned: 3, done: 4 };
     const visiblePlanRows = filteredPlans.filter((plan) => {
       if (!showInactivePlanRows && plan.currentStatus === "inactive") return false;
       if (!showCompletedPlanRows && plan.currentStatus === "done") return false;
+      if (!showAbandonedPlanRows && plan.currentStatus === "abandoned") return false;
       return true;
     });
     return [...visiblePlanRows].sort((a, b) => {
@@ -2494,7 +2504,7 @@ export default function MainProjectPage({ projects, bootstrap, editorKey, viewer
       if (stateDiff !== 0) return stateDiff;
       return a.start_date.localeCompare(b.start_date);
     });
-  }, [filteredPlans, showCompletedPlanRows, showInactivePlanRows]);
+  }, [filteredPlans, showAbandonedPlanRows, showCompletedPlanRows, showInactivePlanRows]);
 
   const preparedPlanRows = useMemo(() => {
     const today = new Date(beijingNow.year, beijingNow.month - 1, beijingNow.day);
@@ -2502,13 +2512,14 @@ export default function MainProjectPage({ projects, bootstrap, editorKey, viewer
       const startDate = parseLocalDate(plan.start_date);
       const expectedDueDate = plan.expected_due_date ? parseLocalDate(plan.expected_due_date) : null;
       const completedAt = plan.completedAt ? parseLocalDate(plan.completedAt) : null;
-      const isRunningState =
-        plan.currentStatus === "primary" || plan.currentStatus === "active" || plan.currentStatus === "inactive";
+      const isRunningState = !isPlanTerminalStatus(plan.currentStatus);
       const effectiveStartDate = startDate > today ? today : startDate;
       const displayEndDate = isRunningState ? today : completedAt ?? expectedDueDate ?? startDate;
+      const displayColor = plan.currentStatus === "abandoned" ? ABANDONED_PLAN_COLOR : plan.color;
 
       return {
         plan,
+        displayColor,
         effectiveStartDate,
         dueIndex: expectedDueDate ? findPlanAxisIndex(expectedDueDate, planAxis) : null,
         startCenter: getPlanAxisPosition(effectiveStartDate, planAxis, planUnitWidth),
@@ -2524,7 +2535,7 @@ export default function MainProjectPage({ projects, bootstrap, editorKey, viewer
             `进度：${plan.currentProgress}%`,
             `起始：${plan.start_date}`,
             `截止：${plan.expected_due_date ?? "未设置"}`,
-            `完成：${plan.currentStatus === "done" ? plan.completedAt ?? "未记录" : "未完成"}`,
+            `结束：${isPlanTerminalStatus(plan.currentStatus) ? plan.completedAt ?? "未记录" : "未结束"}`,
             plan.displayNote || "无备注"
           ],
           editTarget: isCreator ? { entity: "plan", id: plan.id } : null
@@ -2580,8 +2591,6 @@ export default function MainProjectPage({ projects, bootstrap, editorKey, viewer
   const isSelectorDialog = activeDialog === "event-pick" || activeDialog === "plan-pick";
   const activeEventRecord = eventDraft.id ? editableEvents.find((item) => item.id === eventDraft.id) ?? null : null;
   const activePlanRecord = planDraft.id ? editablePlans.find((item) => item.id === planDraft.id) ?? null : null;
-  const planDraftLatestNode = useMemo(() => getLatestPlanNode(planDraft.nodes), [planDraft.nodes]);
-
   return (
     <main className={`lepid-eye-shell ${isDarkMode ? "dark" : "light"}`}>
       <canvas ref={canvasRef} className="butterfly-canvas" />
@@ -2772,6 +2781,15 @@ export default function MainProjectPage({ projects, bootstrap, editorKey, viewer
                   <span className="inline-toggle-box" aria-hidden="true" />
                   <span>展开已完成计划</span>
                 </label>
+                <label className="inline-toggle">
+                  <input
+                    type="checkbox"
+                    checked={showAbandonedPlanRows}
+                    onChange={(event) => setShowAbandonedPlanRows(event.target.checked)}
+                  />
+                  <span className="inline-toggle-box" aria-hidden="true" />
+                  <span>展开已废弃计划</span>
+                </label>
                 <div className="scale-switch" role="tablist" aria-label="计划轨道尺度">
                   {Object.entries(planScaleMap).map(([key, value]) => (
                     <button
@@ -2811,7 +2829,7 @@ export default function MainProjectPage({ projects, bootstrap, editorKey, viewer
                     left: `${planLabelWidth + getPlanAxisPosition(new Date(beijingNow.year, beijingNow.month - 1, beijingNow.day), planAxis, planUnitWidth)}px`
                   }}
                 />
-                {preparedPlanRows.map(({ plan, effectiveStartDate, dueIndex, startCenter, endCenter, planSegments, planHoverDetail }) => {
+                {preparedPlanRows.map(({ plan, displayColor, effectiveStartDate, dueIndex, startCenter, endCenter, planSegments, planHoverDetail }) => {
                   return (
                     <div
                       key={plan.id}
@@ -2822,7 +2840,7 @@ export default function MainProjectPage({ projects, bootstrap, editorKey, viewer
                       >
                         <div
                           className={`plan-label ${mapPlanState(plan.currentStatus)}`}
-                          style={{ "--plan-color": plan.color }}
+                          style={{ "--plan-color": displayColor }}
                           onMouseEnter={(event) => openHoverCard(event, planHoverDetail)}
                           onMouseMove={moveHoverCard}
                         onMouseLeave={closeHoverCard}
@@ -2839,6 +2857,7 @@ export default function MainProjectPage({ projects, bootstrap, editorKey, viewer
                           <div className="plan-due-cell" style={{ left: `${dueIndex * planUnitWidth}px`, width: `${planUnitWidth}px` }} />
                         )}
                         {planSegments.map((segment, index) => {
+                          if (segment.hideBar) return null;
                           const segmentStart = index === 0 ? effectiveStartDate : segment.startDate;
                           const segmentLeft = getPlanAxisPosition(segmentStart, planAxis, planUnitWidth);
                           const segmentRight = getPlanAxisPosition(segment.endDate, planAxis, planUnitWidth);
@@ -2851,9 +2870,9 @@ export default function MainProjectPage({ projects, bootstrap, editorKey, viewer
                               style={{
                                 left: `${segmentLeft}px`,
                                 width: `${segmentWidth}px`,
-                                "--plan-color": plan.color,
+                                "--plan-color": displayColor,
                                 "--plan-segment-fill": buildPlanSegmentFill(
-                                  plan.color,
+                                  displayColor,
                                   segment.progress,
                                   segment.status
                                 )
@@ -2861,9 +2880,9 @@ export default function MainProjectPage({ projects, bootstrap, editorKey, viewer
                             />
                           );
                         })}
-                        <div className="plan-node start" style={{ left: `${startCenter - 9}px`, "--plan-color": plan.color }} />
-                        {plan.currentStatus === "done" && (
-                          <div className="plan-node end" style={{ left: `${endCenter - 9}px`, "--plan-color": plan.color }} />
+                        <div className="plan-node start" style={{ left: `${startCenter - 9}px`, "--plan-color": displayColor }} />
+                        {isPlanTerminalStatus(plan.currentStatus) && (
+                          <div className="plan-node end" style={{ left: `${endCenter - 9}px`, "--plan-color": displayColor }} />
                         )}
                       </div>
                     </div>
@@ -3567,17 +3586,6 @@ export default function MainProjectPage({ projects, bootstrap, editorKey, viewer
                   />
                 </label>
 
-                {planDraftLatestNode?.status === "done" && (
-                  <label className="dialog-field">
-                    <span>完成日期</span>
-                    <input
-                      type="date"
-                      value={planDraft.completedAt}
-                      onChange={(event) => setPlanDraft((current) => ({ ...current, completedAt: event.target.value }))}
-                    />
-                  </label>
-                )}
-
                 <label className="dialog-field">
                   <span>权限等级</span>
                   <select
@@ -3618,7 +3626,7 @@ export default function MainProjectPage({ projects, bootstrap, editorKey, viewer
                   <div className="plan-node-section-head">
                     <div>
                       <strong>计划节点</strong>
-                      <p>节点记录计划从某一天开始进入的新状态与进度，最新节点就是当前视图。</p>
+                      <p>节点记录计划从某一天开始进入的新状态与进度，最新节点就是当前视图。已完成和已废弃会自动把节点日期写入计划结束时间。</p>
                     </div>
                     <button type="button" className="plan-node-add-btn" onClick={addPlanNodeDraft}>
                       新增节点
@@ -4751,6 +4759,17 @@ export default function MainProjectPage({ projects, bootstrap, editorKey, viewer
             0 0 24px color-mix(in srgb, var(--plan-color) 22%, transparent 78%);
         }
 
+        .plan-label.abandoned {
+          border-color: rgba(188, 196, 208, 0.28);
+          background:
+            linear-gradient(160deg, rgba(170, 178, 188, 0.16), rgba(255, 255, 255, 0.03)),
+            linear-gradient(160deg, rgba(255, 255, 255, 0.05), rgba(255, 255, 255, 0.02));
+          box-shadow:
+            14px 0 24px rgba(0, 0, 0, 0.14),
+            inset 0 1px 0 rgba(255, 255, 255, 0.06),
+            0 0 0 1px rgba(170, 178, 188, 0.12);
+        }
+
         .plan-label strong {
           font-size: 0.9rem;
           line-height: 1.35;
@@ -4819,6 +4838,12 @@ export default function MainProjectPage({ projects, bootstrap, editorKey, viewer
 
         .plan-bar.done {
           opacity: 0.78;
+        }
+
+        .plan-bar.abandoned {
+          opacity: 0;
+          box-shadow: none;
+          border-color: transparent;
         }
 
         .plan-node {

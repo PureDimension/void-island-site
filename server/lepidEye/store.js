@@ -39,7 +39,8 @@ const PLAN_COLOR_FALLBACKS = {
   primary: "rgb(168, 214, 255)",
   active: "rgb(194, 209, 235)",
   inactive: "rgb(160, 172, 198)",
-  done: "rgb(225, 234, 244)"
+  done: "rgb(225, 234, 244)",
+  abandoned: "rgb(166, 172, 182)"
 };
 
 const ACCESS_LEVELS = new Set(["low", "medium", "high", "creator"]);
@@ -135,6 +136,7 @@ function normalizePlanNodes(nodes) {
 
 function syncPlanNodes(planId, nodes) {
   const normalizedNodes = normalizePlanNodes(nodes);
+  validatePlanNodes(normalizedNodes);
   db.prepare("DELETE FROM lepid_eye_plan_nodes WHERE plan_id = ?").run(planId);
 
   if (!normalizedNodes.length) return;
@@ -174,10 +176,34 @@ function normalizeAccessRole(role) {
 }
 
 function normalizePlanStatus(status) {
-  if (status === "primary" || status === "active" || status === "inactive" || status === "done") {
+  if (
+    status === "primary"
+    || status === "active"
+    || status === "inactive"
+    || status === "done"
+    || status === "abandoned"
+  ) {
     return status;
   }
   return "active";
+}
+
+function isPlanTerminalStatus(status) {
+  return status === "done" || status === "abandoned";
+}
+
+function getPlanTerminalDate(plan, latestNode) {
+  if (!latestNode) return null;
+  return isPlanTerminalStatus(normalizePlanStatus(latestNode.status))
+    ? latestNode.node_date ?? plan.completed_at ?? null
+    : null;
+}
+
+function validatePlanNodes(nodes) {
+  const doneNodes = nodes.filter((node) => normalizePlanStatus(node.status) === "done");
+  if (doneNodes.length > 1) {
+    throw new Error("Plan can only contain one completed node");
+  }
 }
 
 function getLatestPlanNode(nodes) {
@@ -204,10 +230,7 @@ function getCurrentPlanSnapshot(plan, nodes) {
     latest_node: latestNode,
     current_status: normalizePlanStatus(latestNode.status),
     current_progress: Math.min(100, Math.max(0, Number(latestNode.progress_value ?? 0) || 0)),
-    completed_at:
-      normalizePlanStatus(latestNode.status) === "done"
-        ? plan.completed_at ?? latestNode.node_date ?? null
-        : null
+    completed_at: getPlanTerminalDate(plan, latestNode)
   };
 }
 
@@ -467,7 +490,7 @@ function backfillMissingPlanNodesFromLegacySnapshot() {
       snapshot.node_date,
       MIN(100, MAX(0, COALESCE(snapshot.progress_value, 0))),
       CASE
-        WHEN snapshot.status IN ('primary', 'active', 'inactive', 'done') THEN snapshot.status
+        WHEN snapshot.status IN ('primary', 'active', 'inactive', 'done', 'abandoned') THEN snapshot.status
         ELSE 'active'
       END,
       snapshot.note,
@@ -536,7 +559,7 @@ function migratePlansTable() {
         start_date,
         expected_due_date,
         CASE
-          WHEN status = 'done' AND (completed_at IS NULL OR completed_at = '') THEN COALESCE(expected_due_date, start_date)
+          WHEN status IN ('done', 'abandoned') AND (completed_at IS NULL OR completed_at = '') THEN COALESCE(expected_due_date, start_date)
           ELSE completed_at
         END,
         permission_level,
@@ -787,7 +810,7 @@ function buildStats(events, plans) {
 
   const started = plans.filter((plan) => new Date(plan.start_date) <= periodEnd).length;
   const completed = plans.filter((plan) => plan.current_status === "done").length;
-  const remainingPlans = plans.filter((plan) => plan.current_status !== "done").length;
+  const remainingPlans = plans.filter((plan) => !isPlanTerminalStatus(plan.current_status)).length;
 
   return {
     pieSegments,
@@ -974,14 +997,12 @@ function addLepidEyeRecord({ entity, payload }) {
     if (!normalizedNodes.length) {
       throw new Error("Plan requires at least one node");
     }
+    validatePlanNodes(normalizedNodes);
     if (normalizedNodes[0].node_date !== payload.start_date) {
       throw new Error("First plan node must start on the same day as the plan");
     }
     const latestNode = getLatestPlanNode(normalizedNodes);
-    const completedAt =
-      latestNode && normalizePlanStatus(latestNode.status) === "done"
-        ? payload.completed_at ?? latestNode.node_date ?? getNowDateOnly()
-        : null;
+    const completedAt = getPlanTerminalDate({}, latestNode);
 
     const insertPlan = db.prepare(`
       INSERT INTO lepid_eye_plans (
@@ -1077,15 +1098,13 @@ function mutateLepidEyeRecord({ entity, action, id, payload }) {
       if (!normalizedNodes.length) {
         throw new Error("Plan requires at least one node");
       }
+      validatePlanNodes(normalizedNodes);
       const nextStartDate = payload.start_date ?? current.start_date;
       if (normalizedNodes[0].node_date !== nextStartDate) {
         throw new Error("First plan node must start on the same day as the plan");
       }
       const latestNode = getLatestPlanNode(normalizedNodes);
-      const completedAt =
-        latestNode && normalizePlanStatus(latestNode.status) === "done"
-          ? payload.completed_at ?? current.completed_at ?? latestNode.node_date ?? getNowDateOnly()
-          : null;
+      const completedAt = getPlanTerminalDate(current, latestNode);
 
       const tx = db.transaction(() => {
         db.prepare(`
