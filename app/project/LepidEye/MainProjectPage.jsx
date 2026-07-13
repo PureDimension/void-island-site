@@ -3394,6 +3394,7 @@ export default function MainProjectPage({ projects, bootstrap, editorKey, viewer
                   <span>持续时间（分钟）</span>
                   <input
                     type="number"
+                    className="duration-input"
                     min="1"
                     step="1"
                     value={eventDraft.durationMinutes}
@@ -5235,6 +5236,17 @@ export default function MainProjectPage({ projects, bootstrap, editorKey, viewer
           padding: 12px 14px;
           outline: none;
           transition: border-color 0.18s ease, box-shadow 0.18s ease, background 0.18s ease;
+        }
+
+        .duration-input {
+          appearance: textfield;
+        }
+
+        .duration-input::-webkit-inner-spin-button,
+        .duration-input::-webkit-outer-spin-button {
+          -webkit-appearance: none;
+          appearance: none;
+          margin: 0;
         }
 
         .dialog-field input:focus,

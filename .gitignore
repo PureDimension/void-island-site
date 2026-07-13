@@ -49,4 +49,4 @@ commit-log.txt
 database.db
 database.db-shm
 database.db-wal
-
+database.db.localbak-*
