@@ -3397,6 +3397,7 @@ export default function MainProjectPage({ projects, bootstrap, editorKey, viewer
                     min="1"
                     step="1"
                     value={eventDraft.durationMinutes}
+                    onWheel={(event) => event.preventDefault()}
                     onChange={(event) => setEventDraft((current) => ({ ...current, durationMinutes: event.target.value }))}
                   />
                 </label>
