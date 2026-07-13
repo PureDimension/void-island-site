@@ -3393,12 +3393,9 @@ export default function MainProjectPage({ projects, bootstrap, editorKey, viewer
                 <label className="dialog-field">
                   <span>持续时间（分钟）</span>
                   <input
-                    type="number"
-                    className="duration-input"
-                    min="1"
-                    step="1"
+                    type="text"
+                    inputMode="numeric"
                     value={eventDraft.durationMinutes}
-                    onWheel={(event) => event.preventDefault()}
                     onChange={(event) => setEventDraft((current) => ({ ...current, durationMinutes: event.target.value }))}
                   />
                 </label>
@@ -5236,17 +5233,6 @@ export default function MainProjectPage({ projects, bootstrap, editorKey, viewer
           padding: 12px 14px;
           outline: none;
           transition: border-color 0.18s ease, box-shadow 0.18s ease, background 0.18s ease;
-        }
-
-        .duration-input {
-          appearance: textfield;
-        }
-
-        .duration-input::-webkit-inner-spin-button,
-        .duration-input::-webkit-outer-spin-button {
-          -webkit-appearance: none;
-          appearance: none;
-          margin: 0;
         }
 
         .dialog-field input:focus,
