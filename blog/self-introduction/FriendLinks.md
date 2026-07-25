@@ -82,4 +82,14 @@ title: 友情链接
       </div>
     </div>
   </a>
+
+  <a class="friend-link-anchor" href="https://kira.moe/" target="_blank" rel="noopener noreferrer">
+    <div class="friend-link-card" style="--friend-card-bg: #e7e4ff;">
+      <img class="friend-link-avatar" src="/friendLinkAvatar/kira.jpg" alt="kira.moe avatar" />
+      <div class="friend-link-body">
+        <div class="friend-link-title">同样很可爱的sotr酱！</div>
+        <div class="friend-link-domain">kira.moe</div>
+      </div>
+    </div>
+  </a>
 </div>
