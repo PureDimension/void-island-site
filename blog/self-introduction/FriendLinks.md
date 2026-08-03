@@ -92,4 +92,14 @@ title: 友情链接
       </div>
     </div>
   </a>
+
+  <a class="friend-link-anchor" href="https://kokorotsuki.com/" target="_blank" rel="noopener noreferrer">
+    <div class="friend-link-card" style="--friend-card-bg: #fff0f4;">
+      <img class="friend-link-avatar" src="/friendLinkAvatar/kokorotsuki.jpg" alt="Kokorotsuki avatar" />
+      <div class="friend-link-body">
+        <div class="friend-link-title">属于Koko-Obs3ss..的角落@Kokorotsuki的部落格</div>
+        <div class="friend-link-domain">kokorotsuki.com</div>
+      </div>
+    </div>
+  </a>
 </div>
