@@ -103,6 +103,18 @@
       "color": "white",
       "description": "试运行中",
       "ID": "LepidEye"
+    },
+    {
+      "title": "天箭计划",
+      "color": "#C9A96E",
+      "description": "搭建中",
+      "ID": ""
+    },
+    {
+      "title": "未来事务所",
+      "color": "#A8A090",
+      "description": "预热中",
+      "ID": ""
     }
   ],
   "headline": 
