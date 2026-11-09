@@ -102,4 +102,14 @@ title: 友情链接
       </div>
     </div>
   </a>
+
+  <a class="friend-link-anchor" href="https://tcdw.net/" target="_blank" rel="noopener noreferrer">
+    <div class="friend-link-card" style="--friend-card-bg: #fdfbf3;">
+      <img class="friend-link-avatar" src="https://avatars.githubusercontent.com/u/8687182?s=200" alt="tcdw avatar" />
+      <div class="friend-link-body">
+        <div class="friend-link-title">一只看上去很好戳的碗</div>
+        <div class="friend-link-domain">tcdw.net</div>
+      </div>
+    </div>
+  </a>
 </div>
